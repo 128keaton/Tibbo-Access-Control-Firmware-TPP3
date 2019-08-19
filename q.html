@@ -1,0 +1,8 @@
+<?
+include "global.tbh"
+if html_login_verify(NO,NO)=OK then
+	proc_html_io_event()
+else
+	sock_setsend("INVALID SESSION ID")
+end if
+?>

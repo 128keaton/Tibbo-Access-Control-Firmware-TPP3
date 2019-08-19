@@ -1,0 +1,689 @@
+include "global.tbh"
+
+dim readers(SERIALS_NUMBER) as T_SERIAL_READER
+
+dim readers_table_wait_init as byte
+
+dim param_rhc, param_rhl, param_pos, param_rfc as byte
+
+dim serial_channel as byte(SERIALS_NUMBER)
+
+dim serial_mc as boolean
+dim serial_mc_timer as byte
+dim serial_mc_id as string(25)
+
+sub serial_init()
+	
+	dim i as word
+
+	param_rhc = val(stg_get("RHC", 0))
+	param_rhl = val(stg_get("RHL", 0))
+	param_pos = val(stg_get("POS", 0))
+	param_rfc = val(stg_get("RFC", 0))
+	serial_mc_id = stg_get("MC", 0)
+	
+	serial_channel(0) = val(stg_get("NW", 0))
+	serial_channel(1) = val(stg_get("NW", 1))
+	serial_channel(2) = val(stg_get("NW", 2))
+	serial_channel(3) = val(stg_get("NW", 3))
+	
+	serial_mc = false
+	serial_mc_timer = 0
+	
+	if ser.numofports < SERIALS_NUMBER then exit sub
+	
+	serial_tbl_init()
+	
+	for i = 0 to SERIALS_NUMBER - 1
+		if readers(i).num > 0 then
+			serial_init_io(i)
+			ser.num = serial_channel(readers(i).num - 1)
+			ser.mode = PL_SER_MODE_WIEGAND 
+			ser.interchardelay = 4
+			ser.autoclose = YES
+			ser.enabled = NO
+			ser.rxbuffrq(1)
+			ser.txbuffrq(0)
+		end if
+	next i
+
+	sys.buffalloc
+
+	for i = 0 to SERIALS_NUMBER - 1
+		if readers(i).num > 0 then
+			ser.num = serial_channel(readers(i).num - 1)
+			ser.enabled = YES
+		end if
+	next i
+
+end sub
+
+sub serial_tbl_init()
+	
+	dim i as word
+	dim rec_num as word
+	dim num as byte
+
+	readers_table_wait_init = 0
+
+	for i = 0 to SERIALS_NUMBER - 1
+		readers(i).num = 0
+		readers(i).delay_beep = 0
+		readers(i).state = EN_SR_WAIT
+		readers(i).delay_state = 0
+		readers(i).card_id = ""
+	next i
+
+	'Get settings for readers from tbl READERS
+	if tbl_select("readers", "readers") = EN_TBL_STATUS_OK then
+		if tbl_get_num_records(rec_num, YES) = EN_TBL_STATUS_OK then
+			for i = 1 to rec_num
+				if tbl_is_record_deleted(i) = NO then
+					if tbl_record_read_active(i) = EN_TBL_STATUS_OK then
+					
+						' Copy data from table to array
+						num = tbl_field_get("channel")
+						if num > 0 and num <= SERIALS_NUMBER then
+							if tbl_field_get("enabled") = "1" then
+								readers(num - 1).num = num
+								readers(num - 1).direction = tbl_field_get("direction")
+								readers(num - 1).relayChannel = tbl_field_get("relayChannel")
+							end if
+						end if
+					end if
+				end if
+			next i
+			if rec_num = 0 then serial_mc_id = ""
+		end if
+	end if
+
+#if DEV_DEBUG_PRINT
+	dev_debugprint("Arrays for readers has updated")
+#endif
+
+end sub
+
+sub serial_check_tbl_update()
+
+	if readers_table_wait_init <> 0 then
+		readers_table_wait_init = readers_table_wait_init - 1
+		if readers_table_wait_init = 0 then
+			serial_tbl_init()
+		end if
+	end if
+	
+end sub
+
+sub serial_timer()
+
+	dim i as byte
+	dim time_req as string(17)
+	dim dcount as word
+	dim mcount as word
+	dim sec as byte
+	
+	for i = 0 to SERIALS_NUMBER - 1
+		if readers(i).delay_beep <> 0 then
+			readers(i).delay_beep = readers(i).delay_beep - 1
+			if readers(i).delay_beep = 0 then
+				serial_beep_end(i)
+				ser.num = serial_channel(i)
+				ser.enabled = YES
+			end if
+		end if
+
+		if readers(i).delay_state <> 0 then
+			readers(i).delay_state = readers(i).delay_state - 1
+			if readers(i).delay_state = 0 then
+				if readers(i).state = EN_SR_APB then
+					' APB request timeout
+					if ac_apb_to_permission = true then
+						' TimeOut Pass
+						readers(i).state = EN_SR_GRANTED
+						readers(i).delay_state = 3
+						relay_open_channel(readers(i).relayChannel)
+#if SUPPORTS_DISPLAY
+						display_reader_state(i+1)
+#endif
+						rtc.getdata(dcount,mcount,sec)
+						td_to_str(time_req,dcount,mcount,sec,0)
+						event_apb(EN_EE_CHANGEAREA, readers(i).card_id, i+1, time_req)
+						event_add(EN_ES_APB, EN_EE_GRANTED, "Timeout", readers(i).card_id)
+					else
+						' TimeOut Deny
+						readers(i).state = EN_SR_DENIED
+						readers(i).delay_state = 3
+#if SUPPORTS_DISPLAY
+						display_reader_state(i+1)
+#endif
+
+						serial_beep_start(i)
+						readers(i).delay_beep = 5
+						event_add(EN_ES_APB, EN_EE_DENY, "Timeout", readers(i).card_id)
+					end if
+				end if
+				
+				readers(i).state = EN_SR_WAIT
+#if SUPPORTS_DISPLAY
+				display_reader_state(i+1)
+#endif
+			end if
+		end if
+
+	next i
+	
+	if serial_mc = true then
+		if serial_mc_timer > 0 then 
+			serial_mc_timer = serial_mc_timer - 1
+		else
+			serial_mc = false
+		end if
+	end if
+
+end sub
+
+function serial_apb_result(reader as byte, result as boolean, lastTime as string(23)) as EN_FUNC_STATUS
+
+	dim timereq as string(17)
+	dim dcount, dreq as word
+	dim mcount, mreq as word
+	dim sec, secreq as byte
+	dim msecreq as word
+
+	serial_apb_result = EN_FS_FAIL
+	if reader > SERIALS_NUMBER - 1 then exit function
+
+	if readers(reader).state = EN_SR_APB then
+		if result then
+			' APB Success
+			readers(reader).state = EN_SR_GRANTED
+			readers(reader).delay_state = 3
+#if SUPPORTS_DISPLAY
+			display_reader_state(reader+1)
+#endif
+			' Sends T&A Info
+			if readers(reader).direction > EN_SR_DT_NOT_APPLICABLE then
+				event_time(readers(reader).card_id, event_sr_to_ta(readers(reader).direction))
+			end if
+
+			event_add(EN_ES_APB, EN_EE_GRANTED, "Success", readers(reader).card_id)
+			
+			relay_open_channel(readers(reader).relayChannel)
+		else
+			' APB Fail
+			select case ac_apb_type
+			case EN_AC_APB_HARD:
+				readers(reader).state = EN_SR_DENIED
+				readers(reader).delay_state = 3
+#if SUPPORTS_DISPLAY
+				display_reader_state(reader+1)
+#endif
+
+				serial_beep_start(reader)
+				readers(reader).delay_beep = 5
+
+				event_add(EN_ES_APB, EN_EE_DENY, "Deny (HARD)", readers(reader).card_id)
+				
+			case EN_AC_APB_SOFT:
+				readers(reader).state = EN_SR_GRANTED
+				readers(reader).delay_state = 3
+#if SUPPORTS_DISPLAY
+				display_reader_state(reader+1)
+#endif
+				' Sends T&A Info
+				if readers(reader).direction > EN_SR_DT_NOT_APPLICABLE then
+					event_time(readers(reader).card_id, event_sr_to_ta(readers(reader).direction))
+				end if
+
+				rtc.getdata(dcount,mcount,sec)
+				td_to_str(timereq,dcount,mcount,sec,0)
+				event_apb(EN_EE_CHANGEAREA, readers(reader).card_id, reader+1, timereq)
+				event_add(EN_ES_APB, EN_EE_GRANTED, "Timeout", readers(reader).card_id)
+				event_add(EN_ES_APB, EN_EE_GRANTED, "Deny (SOFT)", readers(reader).card_id)
+				
+				relay_open_channel(readers(reader).relayChannel)
+				
+			case EN_AC_APB_TIMED:
+				timereq = mid(lastTime, 1, 4) + mid(lastTime, 6, 2) + mid(lastTime, 9, 2) + mid(lastTime, 12, 2) + mid(lastTime, 15, 2) + mid(lastTime, 18, 2) + "000"
+				td_from_str(timereq, dreq, mreq, secreq, msecreq)
+				rtc.getdata(dcount, mcount, sec)
+				
+				mreq = mreq + ac_apb_to_type
+				if mreq >= 1440 then
+					dreq = dreq + 1
+					mreq = mreq - 1440
+				end if
+				
+				if dreq < dcount OR (dreq = dcount AND mreq < mcount) OR (dreq = dcount AND mreq = mcount AND secreq < sec) then
+					' Timed OUT
+					readers(reader).state = EN_SR_GRANTED
+					readers(reader).delay_state = 3
+#if SUPPORTS_DISPLAY
+					display_reader_state(reader+1)
+#endif
+					' Sends T&A Info
+					if readers(reader).direction > EN_SR_DT_NOT_APPLICABLE then
+						event_time(readers(reader).card_id, event_sr_to_ta(readers(reader).direction))
+					end if
+
+					rtc.getdata(dcount,mcount,sec)
+					td_to_str(timereq,dcount,mcount,sec,0)
+					event_apb(EN_EE_CHANGEAREA, readers(reader).card_id, reader+1, timereq)
+					event_add(EN_ES_APB, EN_EE_GRANTED, "Deny (TIMED)", readers(reader).card_id)
+					
+					relay_open_channel(readers(reader).relayChannel)
+				else
+					' In timed period
+					readers(reader).state = EN_SR_DENIED
+					readers(reader).delay_state = 3
+#if SUPPORTS_DISPLAY
+					display_reader_state(reader+1)
+#endif
+
+					serial_beep_start(reader)
+					readers(reader).delay_beep = 5
+
+					event_add(EN_ES_APB, EN_EE_DENY, "Deny (TIMED)", readers(reader).card_id)
+				end if
+				
+				
+			end select
+		end if
+		
+		serial_apb_result = EN_FS_SUCCESSFUL
+	
+	else
+		serial_apb_result = EN_FS_FAIL
+	end if
+	
+end function
+
+sub serial_data_operate()
+
+	dim data as string
+	dim id as dword
+	dim reader as byte
+	dim temp_str as string(6)
+	dim return_str as string(14)
+	dim data_string as string(64)
+	dim name as string(20)
+	
+	dim tres as long
+	
+	'tres = sys.timercountms
+
+	reader = get_reader(ser.num)
+
+	if reader = 255 then exit sub
+	
+	data = ser.getdata(255)
+	
+	if readers(reader).state = EN_SR_APB then 
+		serial_beep_start(reader)
+		readers(reader).delay_beep = 5
+		ser.num = serial_channel(readers(reader).num - 1)
+		ser.enabled = YES
+		exit sub
+	end if
+
+#if DEV_DEBUG_PRINT
+	dev_debugprint("Serial raw data readed: '" + data + "'(" + str(len(data)) + "), reader: " + str(reader+1))
+#endif
+
+'-====================================================================
+	temp_str = ""
+	return_str = ""
+	data_string = data
+	
+	data_string = mid(data_string, 2, len(data_string) - 2)
+	while len(data_string) > 0
+		temp_str = "&b" + right(data_string, 4)
+		temp_str = hex(val(temp_str))	
+		return_str = right(temp_str, 1) + return_str
+		if len(data_string) > 4 then
+			data_string = left(data_string, len(data_string) - 4)
+		else 
+			data_string = ""
+		end if
+	wend
+	
+	dim s2 as string
+
+	if param_rhc = 1 then
+		s2 = right(return_str, param_rhl + param_pos)
+		s2 = left(s2, param_rhl)
+		return_str = hex_str_to_dec_str(s2)
+	
+		return_str = right(return_str, param_rfc)
+		if len(return_str) < param_rfc then
+			return_str = strgen(param_rfc - len(return_str), "0") + return_str
+		end if		
+	else
+		return_str = right(return_str, param_rfc + param_pos)
+		return_str = left(return_str, param_rfc)
+		if len(return_str) < param_rfc then
+			return_str = strgen(param_rfc - len(return_str), "0") + return_str
+		end if		
+	end if
+
+	data = return_str
+'-====================================================================
+
+#if DEV_DEBUG_PRINT
+	dev_debugprint("Serial data: '" + data + "'(" + str(len(data)) + "), reader: " + str(reader+1))
+#endif
+
+	' Check Master Card ID
+	if data = serial_mc_id then
+		serial_mc = true
+		serial_mc_timer = 100
+#if DEV_DEBUG_PRINT
+		dev_debugprint("Master Card detected!")
+
+#endif
+	else
+		if flag_update = false then
+			event_add(EN_ES_READER, EN_EE_CARD_READED, readers(reader).num, data)
+			if ta_mode = false then
+				readers(reader).state = EN_SR_CHECKING
+#if SUPPORTS_DISPLAY
+				display_reader_state(reader+1)
+#endif
+
+				readers(reader).card_id = data
+				select case (ac_check_id(data, reader+1, readers(reader).relayChannel, name))
+				case EN_AR_UNKNOWN:
+					readers(reader).state = EN_SR_DENIED
+					readers(reader).delay_state = 3
+#if SUPPORTS_DISPLAY
+					display_reader_state(reader+1)
+#endif
+
+					serial_beep_start(reader)
+					readers(reader).delay_beep = 5
+					
+				case EN_AR_GRANTED:
+					readers(reader).state = EN_SR_GRANTED
+					readers(reader).delay_state = 3
+#if SUPPORTS_DISPLAY
+					display_reader_state(reader+1)
+					display_name(name)
+#endif
+					' Sends T&A Info
+					if readers(reader).direction > EN_SR_DT_NOT_APPLICABLE then
+						event_time(data, event_sr_to_ta(readers(reader).direction))
+					end if
+					
+				case EN_AR_RESTRICTED:
+					readers(reader).state = EN_SR_DENIED
+					readers(reader).delay_state = 3
+#if SUPPORTS_DISPLAY
+					display_reader_state(reader+1)
+#endif
+
+					serial_beep_start(reader)
+					readers(reader).delay_beep = 5
+					
+				case EN_AR_APB:
+					readers(reader).state = EN_SR_APB
+					readers(reader).delay_state = 10
+#if SUPPORTS_DISPLAY
+					display_reader_state(reader+1)
+					display_name(name)
+#endif
+				end select
+				
+#if SUPPORTS_DISPLAY
+			else
+				' TIME & ATTENDANCE RECORDER
+				if ta_check_id(data, name) then
+					display_name(name)
+					if readers(reader).direction > EN_SR_DT_NOT_APPLICABLE then
+						dim ta_tmp as byte
+						dim ta_b_tmp as byte
+						
+						ta_tmp = ta_direction
+						ta_direction = readers(reader).direction
+						select case ta_direction
+						case EN_TA_DT_IN:
+							ta_b_tmp = ta_b1
+							ta_b1 = true
+							
+						case EN_TA_DT_OUT:
+							ta_b_tmp = ta_b2
+							ta_b2 = true
+							
+						case EN_TA_DT_INTMP:
+							ta_b_tmp = ta_b3
+							ta_b3 = true
+							
+						case EN_TA_DT_OUTTMP:
+							ta_b_tmp = ta_b4
+							ta_b4 = true
+							
+						end select
+						display_ta_icons()
+						
+						event_time(data, event_sr_to_ta(readers(reader).direction))
+						
+						select case ta_direction
+						case EN_TA_DT_IN:
+							ta_b1 = ta_b_tmp
+							
+						case EN_TA_DT_OUT:
+							ta_b2 = ta_b_tmp
+							
+						case EN_TA_DT_INTMP:
+							ta_b3 = ta_b_tmp
+							
+						case EN_TA_DT_OUTTMP:
+							ta_b4 = ta_b_tmp
+							
+						end select
+						ta_direction = ta_tmp
+						display_ta_icons()
+					else
+						event_time(data, ta_direction)
+					end if
+				end if
+
+#endif
+			end if
+		end if
+	end if
+
+	ser.num = serial_channel(readers(reader).num - 1)
+	ser.enabled = YES
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("End")
+	#endif
+
+end sub
+
+function get_serial(channel as byte) as byte
+
+	get_serial = 255 
+	
+	if serial_channel(0) = channel then get_serial = 0
+	if serial_channel(1) = channel then get_serial = 1
+	if SERIALS_NUMBER > 2 then	if serial_channel(2) = channel then get_serial = 2
+	if SERIALS_NUMBER > 3 then	if serial_channel(3) = channel then get_serial = 3
+
+end function
+
+function get_reader(channel as byte) as byte
+	
+	get_reader = 255
+
+	if readers(0).num - 1 = get_serial(channel) then get_reader = 0
+	if readers(1).num - 1 = get_serial(channel) then get_reader = 1
+	if SERIALS_NUMBER > 2 then	if readers(2).num - 1 = get_serial(channel) then get_reader = 2
+	if SERIALS_NUMBER > 3 then	if readers(3).num - 1 = get_serial(channel) then get_reader = 3
+
+end function
+
+function hex_str_to_dec_str(byref hex_str as string) as string
+
+'transforms HEX string into DEC string. These are not strings of ASCII
+'characters, but bytes with only 4 least significant bits occupied. For example,
+'bytes 0A 0B 0C represent hex code "ABC". Same will be with the output. DEC of
+'"ABC" is "2748" so we will have bytes 02 07 04 08
+
+	dim x, y, z, q, f as byte
+	dim temp_arr as string
+
+	for f = 1 to len(hex_str)
+		insert(hex_str, f, chr(val("&h" + mid(hex_str, f, 1))))
+	next f
+
+	z = len(hex_str)
+	hex_str_to_dec_str = ""
+	while(z > 0)
+		temp_arr = ""
+		x = 0 'accumulates dividee
+		q = 0 '"non-zero encountered" flag- to avoid leading zeroes
+		for f = 0 to z-1
+			x = x * 16 + asc(mid(hex_str, f+1, 1))
+			if x >= 10 then
+				y = x / 10
+				x = x - y * 10
+				temp_arr = temp_arr + chr(y)
+				q = 1
+			else
+				if q > 0 then
+					temp_arr = temp_arr + chr(0)
+				end if
+			end if
+		next f
+
+		hex_str_to_dec_str = chr(x) + hex_str_to_dec_str
+		z = len(temp_arr)
+		hex_str = temp_arr
+	wend
+
+	for f = 1 to len(hex_str_to_dec_str)
+		insert(hex_str_to_dec_str, f, chr(asc(mid(hex_str_to_dec_str, f, 1)) + &h30))
+	next f
+end function
+
+sub serial_beep_start(reader as byte)
+
+	select case serial_channel(readers(reader).num - 1)
+	case 0:
+		io.num = PL_IO_NUM_9_TX0
+		io.enabled = YES
+		io.state = LOW
+
+	case 1:
+		io.num = PL_IO_NUM_11_TX1
+		io.enabled = YES
+		io.state = LOW
+		
+	case 2:
+		io.num = PL_IO_NUM_13_TX2
+		io.enabled = YES
+		io.state = LOW
+		
+	case 3:
+		io.num = PL_IO_NUM_15_TX3
+		io.enabled = YES
+		io.state = LOW
+
+	end select
+
+end sub
+
+sub serial_beep_end(reader as byte)
+
+	select case serial_channel(readers(reader).num - 1)
+	case 0:
+		io.num = PL_IO_NUM_9_TX0
+		io.enabled = YES
+		io.state = HIGH
+
+	case 1:
+		io.num = PL_IO_NUM_11_TX1
+		io.enabled = YES
+		io.state = HIGH
+		
+	case 2:
+		io.num = PL_IO_NUM_13_TX2
+		io.enabled = YES
+		io.state = HIGH
+
+	case 3:
+		io.num = PL_IO_NUM_15_TX3
+		io.enabled = YES
+		io.state = HIGH
+		
+	end select
+
+end sub
+
+sub serial_init_io(reader as byte)
+
+	select case serial_channel(reader)
+	case 1:
+		io.num = PL_IO_NUM_9_TX0
+		io.enabled = YES
+		io.state = HIGH
+		
+		io.num= PL_IO_NUM_8_RX0
+		io.state = NO
+		
+		io.num = PL_IO_NUM_0
+		io.enabled = YES
+		io.state = HIGH		' WIEGAND mode set
+		
+		io.num= PL_IO_NUM_16_INT0
+		io.enabled = NO
+
+	case 2:
+		io.num = PL_IO_NUM_11_TX1
+		io.enabled = YES
+		io.state = HIGH
+		
+		io.num = PL_IO_NUM_10_RX1
+		io.state = NO
+		
+		io.num = PL_IO_NUM_1
+		io.enabled = YES
+		io.state = HIGH		' WIEGAND mode set
+		
+		io.num = PL_IO_NUM_17_INT1
+		io.enabled = NO
+
+	case 3:
+		io.num = PL_IO_NUM_13_TX2
+		io.enabled = YES
+		io.state = HIGH
+		
+		io.num = PL_IO_NUM_12_RX2
+		io.state = NO
+		
+		io.num = PL_IO_NUM_2
+		io.enabled = YES
+		io.state = HIGH		' WIEGAND mode set
+		
+		io.num = PL_IO_NUM_18_INT2
+		io.enabled = NO
+
+	case 4:
+		io.num = PL_IO_NUM_15_TX3
+		io.enabled = YES
+		io.state = HIGH
+		
+		io.num = PL_IO_NUM_14_RX3
+		io.state = NO
+		
+		io.num = PL_IO_NUM_3
+		io.enabled = YES
+		io.state = HIGH		' WIEGAND mode set
+		
+		io.num = PL_IO_NUM_19_INT3
+		io.enabled = NO
+
+	end select
+
+end sub

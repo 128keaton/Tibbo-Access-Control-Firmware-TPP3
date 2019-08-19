@@ -1,0 +1,73 @@
+enum EN_RELAY_TYPE
+	EN_RT_NORMAL_OPEN = 0,
+	EN_RT_NORMAL_CLOSE = 1
+end enum
+
+enum EN_RELAY_STATUS
+	CLOSED,
+	OPENED,
+	LONG_OPENED
+end enum
+
+enum EN_RELAY_TYPE_CHANGE
+	EN_RC_NORMAL,
+	EN_RC_EMERGENCY,
+	EN_RC_BLOCK
+end enum
+
+enum EN_EMERGENCY_STATUS
+	EN_ES_EMERGENCY_NOT_ACTIVE,
+	EN_ES_EMERGENCY_ACTIVE
+end enum
+
+enum EN_BLOCK_STATUS
+	EN_BS_BLOCK_NOT_ACTIVE,
+	EN_BS_BLOCK_ACTIVE
+end enum
+
+type T_RELAY_SET
+	impulse as byte
+	relay_type as EN_RELAY_TYPE
+	status as EN_RELAY_STATUS
+	emerg_stat as boolean
+	block_stat as boolean
+	timer as byte
+	spec_timer as byte
+	hw_num as byte
+end type
+
+'type T_RELAY_CHANNEL
+'	channel as byte
+'	relay as byte
+'end type
+
+const RELAYS_MINIMUM_DELAY = 250
+const RELAYS_NUMBER = 4		' For TPB2 - 4 relays for 1 unit, for TPB3 - 8 relays for 2 units
+
+declare relay_emergency_status as EN_EMERGENCY_STATUS
+declare relay_block_status as EN_BLOCK_STATUS
+declare relay_perco as boolean
+declare relays(4) as T_RELAY_SET
+
+declare sub relay_init()
+declare sub relay_state_init()
+declare sub relay_init_arrays()
+declare sub relay_open_channel(channel as byte)
+declare function relay_open_channel_agg(channel as byte) as EN_FUNC_STATUS
+declare function relay_open_channel_long(channel as byte) as EN_FUNC_STATUS
+declare function relay_close_channel_long(channel as byte) as EN_FUNC_STATUS
+declare sub relay_control_timer()
+declare sub relay_emergency_start(relays as byte)
+declare sub relay_emergency_end(rels as byte)
+declare sub relay_block_start(relays as byte)
+declare sub relay_block_end(rels as byte)
+declare sub relay_set_emergency(relay as byte, stat as EN_RELAY_STATUS)
+declare sub relay_reset_emergency(relay as byte)
+declare sub relay_set_block(relay as byte, stat as EN_RELAY_STATUS)
+declare sub relay_reset_block(relay as byte)
+declare sub relay_change_status(relay as byte, stat as EN_RELAY_STATUS, force as boolean)
+declare sub relay_delay_minimum()
+declare sub relay_set(relay as byte)
+declare sub relay_reset(relay as byte)
+declare sub relay_close_opened(dir_t as EN_SR_DIRECTION_TYPE)
+declare function relay_get_socket(relay as byte) as byte

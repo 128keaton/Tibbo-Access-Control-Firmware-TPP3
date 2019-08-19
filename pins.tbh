@@ -1,0 +1,58 @@
+enum EN_PIN_FUNCTIONAL
+	EN_PF_UNASSIGNED = 0,
+	EN_PF_REQUEST_EXIT = 1,
+	EN_PF_REMOTE_OPEN = 2,
+	EN_PF_REMOTE_OPEN_LONG = 3,
+	EN_PF_DOOR_CONTACT = 4,
+	EN_PF_TURNSTYLE_IN_CONTACT = 5,
+	EN_PF_TURNSTYLE_OUT_CONTACT = 6,
+	EN_PF_ALARM_CONTACT = 7,
+	EN_PF_EMERGENCY_OPEN = 100,
+	EN_PF_EMERGENCY_TOGGLE = 101,
+	EN_PF_BLOCK = 110,
+	EN_PF_BLOCK_TOGGLE = 111
+end enum
+
+enum EN_PIN_EVENT
+	EN_PE_START,
+	EN_PE_END
+end enum
+
+enum EN_PIN_STATE
+	EN_PS_OPEN,
+	EN_PS_CLOSE,
+	EN_PS_GUARD
+end enum
+
+type T_PIN_STATE
+	state as EN_PIN_STATE
+	timer as byte
+	toggle as boolean
+end type
+
+enum EN_PIN_TYPE
+	EN_PT_NORMAL_OPEN,
+	EN_PT_NORMAL_CLOSE
+end enum
+
+type T_PIN_SET
+	func as EN_PIN_FUNCTIONAL
+	relays as byte
+	delay_stop as byte
+	delay_renewal as byte
+	pin_type as EN_PIN_TYPE
+	hw_num as byte
+end type
+
+declare pins(8) as T_PIN_STATE
+declare pins_sets(8) as T_PIN_SET
+const PINS_NUMBER = 8
+
+declare sub pin_init()
+declare function pin_get_slot(pin as byte) as byte
+declare sub pin_array_init()
+declare sub pin_read_state()
+declare sub pin_check(pin as byte)
+declare sub pin_function(func as EN_PIN_FUNCTIONAL, ev as EN_PIN_EVENT, pin as byte, relays as byte)
+declare function pin_get_emergency_relays() as byte
+declare function pin_get_block_relays() as byte

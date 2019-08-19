@@ -1,0 +1,18 @@
+#if SUPPORTS_DISPLAY
+
+declare sub display_init()
+declare sub display_icon(file as string(16), x as word, y as word, bmp_x as word, bmp_y as word, size_x as word, size_y as word, backcolor as word)
+declare sub display_reader_state(reader as byte)
+declare sub display_relay_state(relay as byte)
+declare function display_bits(value as long, len as byte) as string(16)
+declare sub display_lcd_text(byref text as string(30), x as word, y as word, width as word, height as word)
+declare sub display_lcd_access(byref text as string(30), x as word, y as word, width as word, height as word, color as word)
+declare sub display_lcd_ta_time(byref text as string(30), x as word, y as word, width as word, height as word, color as word)
+declare sub display_time(time as string(17))
+declare sub display_time_symbol(symbol as string(1), byref off as word)
+declare sub display_date(dt as string(10))
+declare sub display_date_symbol(symbol as string(1), byref off as word)
+declare sub display_name(name as string(20))
+declare sub display_ta_icons()
+
+#endif

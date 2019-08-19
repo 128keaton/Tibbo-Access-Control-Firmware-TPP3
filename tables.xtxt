@@ -1,0 +1,66 @@
+==user	100	T	0
+>>user_id	U	1	1000000	1
+>>name	S	0	10	n
+==ACE	10000	L	0	Access Control Events log
+>>DT	T	6	0	20000101010101001	Date/time
+>>AEL	B	0	5	2	Source of event
+>>DS	S	0	4	^
+>>Source	B	0	11	0
+>>Event	B	0	17	0
+>>Addition	S	0	15	^
+>>Extra	S	0	15	^
+==readers	4	T	1	List of readers
+>>name	S	0	5	^
+>>channel	B	0	4	^
+>>direction	B	0	2	0
+>>relayChannel	B	0	20	0
+>>enabled	B	0	1	1
+>>description	S	0	16	^
+==cards	10000	T	0	List of tokens
+>>index	W	0	65535	0
+>>id	S	0	16	^
+>>hash	B	0	255	^
+>>name	S	0	12	^
+>>actYear	B	0	99	0
+>>actMonth	B	1	12	1
+>>actDay	B	1	31	1
+>>actHour	B	0	23	0
+>>actMin	B	0	59	0
+>>deactYear	B	0	99	0
+>>deactMonth	B	1	12	1
+>>deactDay	B	1	31	1
+>>deactHour	B	0	23	0
+>>deactMin	B	0	59	0
+>>supervisor	W	0	65535	0
+>>acl	W	0	65535	0
+==tzones	200	T	0	List of time zones
+>>name	S	0	16	^
+>>fromTime	T	6	0	20000101010101001
+>>toTime	T	6	0	20000101010101001
+>>fromYear	W	2000	2099	2016
+>>toYear	W	2000	2099	2016
+>>months	W	0	65535	0
+>>monthDays	U	0	2147483647	0
+>>weekDays	B	0	255	0
+==acl	1000	T	0	List of ACL
+>>index	W	0	65535	0
+>>acl	S	0	16	^
+>>reader	B	0	4	0
+>>timezone	S	0	16	^
+>>policy	B	0	1	1
+>>confirm	B	0	1	0
+==AU_BUT	20	T	0
+>>time	T	1	0	0000
+>>act	B	0	15	0
+==CR	15000	L	0
+>>type	B	0	3	0
+>>id	S	1	20	xxxxxxxx
+>>date	T	6	0	20000101010101001
+#define TBL_DESCRIPTOR_FILE "tables.xtxt"
+#define TBL_AGGREGATE_HASH 1
+#define TBL_MAX_TABLE_NAME_LEN 7
+#define TBL_MAX_FIELD_NAME_LEN 12
+#define TBL_MAX_FIELD_VALUE_LEN 21
+#define TBL_MAX_RECORD_SIZE 64
+#define TBL_MAX_NUM_TABLES 8
+#define TBL_MAX_TOTAL_NUM_FIELDS 66

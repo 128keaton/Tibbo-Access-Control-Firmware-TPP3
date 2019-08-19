@@ -1,0 +1,2319 @@
+include "global.tbh"
+
+#define BEEP_AVAILABLE 1
+
+const DEV_STAMP="DEVICE> "
+const DEV_CR_LF=chr(13)+chr(10)
+const AGG_MAX_RETRY=4
+'------------------------------------------------------------------------------
+declare sub device_stg_mod_sg(byref stg_name as string, index as byte, byref stg_val as string, op as en_stg_rdwr)
+
+'------------------------------------------------------------------------------
+public dim led_pat_to_play,led_pat_to_play_prev as string(18)
+public dim reboot_timer as byte
+
+dim prev_login_mode as cmd_modes
+
+#if USE_SNTP
+	public dim s_sock as byte
+	public dim last_sntp_date as word
+	public dim param_te as byte
+#endif
+
+#if WLN_AVAILABLE 
+	public dim wln_want_to_change_ap as no_yes
+	public dim wln_rescanning as no_yes
+	public dim rssi_update_timer as byte
+	
+	#if SUPPORTS_DISPLAY
+		public dim wln_network_state as en_network_states
+	#endif
+#endif
+
+#if SUPPORTS_DISPLAY
+	public dim agg_cmd_received as no_yes
+	public dim lan_network_state as en_network_states
+
+	dim ib_chr_timer as byte
+	dim input_box_mode as en_ib_mode
+	dim ib_init as no_yes
+	dim chr_init as no_yes	'flag used to decide if add a new character, or replace the current character.
+	dim agg_cmd_progress as byte
+	dim prev_icon as byte
+	
+#endif
+
+#if SUPPORTS_AGG
+	public dim param_ar as byte
+	public dim owner_name_temp as string(32)
+	public dim device_name_temp as string(32)
+	public dim conn_p_modified as no_yes
+	public dim server_ip_temp as string(15)
+	public dim test_connection_retry as byte
+	public dim agg_test_connection_timer as byte
+
+	#if USE_DNS
+		public dim domain_name_temp as string(32)
+	#endif
+	
+	dim agg_retry_counter as byte
+	
+	declare agg_sock as byte
+	declare agg_sychronized as no_yes
+	declare sub agg_data_send(s as string)
+	declare sub gprs_start_over()
+	declare function agg_stg_msg(stg_result as en_stg_status_codes) as string
+#endif
+
+'==============================================================================
+
+#if SUPPORTS_AGG
+sub callback_agg_pre_buffrq(x as byte)
+
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_agg_buff_released()
+	if reboot_flag=YES then sys.reboot
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_agg_error(failure_code as en_agg_status_codes, byref error_item as string)
+	
+	#if SUPPORTS_GPRS
+		if failure_code=EN_AGG_STATUS_CONNECTION_LOST then
+			if agg_retry_counter>0 then 
+				agg_retry_counter=agg_retry_counter-1
+				if agg_retry_counter=0 then
+					agg_stop()
+					select case current_interface
+	
+					case PL_SOCK_INTERFACE_WLN:
+						
+					case PL_SOCK_INTERFACE_PPP:
+						if current_interface=PL_SOCK_INTERFACE_PPP then
+							#if DEV_DEBUG_PRINT
+								dev_debugprint("Restart GPRS")
+							#endif
+
+							interface_ready(PL_SOCK_INTERFACE_PPP)=NO
+							gprs_start_over()
+						end if							
+					case else
+					
+					end select
+
+				end if
+			else
+				agg_retry_counter=AGG_MAX_RETRY
+			end if
+		end if
+	#endif
+
+	if failure_code>=EN_AGG_STATUS_NOT_STARTED and failure_code<=EN_AGG_STATUS_CONNECTION_LOST then
+		if test_connection_retry>0 then
+			test_connection_retry=test_connection_retry-1
+			if test_connection_retry=0 then
+				agg_stop()
+			end if
+		end if
+	end if
+end sub
+
+'------------------------------------------------------------------------------
+function callback_agg_external_data_source(byref source_type as string, byref parameter1 as string, byref parameter2 as string, byref parameter3 as string, rw as en_agg_rdwr)as ok_ng
+	callback_agg_external_data_source=OK
+
+end function
+
+'------------------------------------------------------------------------------
+function callback_agg_external_data_modtime_sg(byref source_type as string, byref item_name as string, byref date_time as string, op as en_agg_rdwr) as ok_ng
+	callback_agg_external_data_modtime_sg=OK
+
+end function
+'------------------------------------------------------------------------------
+function callback_agg_setting_saved(byref setting_name as string,index as byte, byref setting_val as string) as en_stg_status_codes
+
+'----------------------------------------------------
+'|	AccessControl									|
+'----------------------------------------------------
+	select case setting_name
+	case "MC":  serial_mc_id = setting_val
+	case "RHC":	param_rhc = val(setting_val)
+	case "RHL":	param_rhl = val(setting_val)
+	case "POS":	param_pos = val(setting_val)
+	case "RFC":	param_rfc = val(setting_val)
+	case "PF":	pins_sets(index).func = val(setting_val)
+	case "PR":	pins_sets(index).relays = val(setting_val)
+	case "PD":	pins_sets(index).delay_stop = val(setting_val)
+	case "PN":	pins_sets(index).delay_renewal = val(setting_val)
+	case "PS":	pins_sets(index).pin_type = val(setting_val)
+	case "RI":	relays(index).impulse = val(setting_val)
+	case "AB":	ta_sheduled = val(setting_val)
+	case "ET":	events_enable(0) = val(setting_val)
+	case "EG":	events_enable(EN_ES_AGG) = val(setting_val)
+	case "EI":	events_enable(EN_ES_INPUT) = val(setting_val)
+	case "ER":	events_enable(EN_ES_RELAY) = val(setting_val)
+	case "EE":	events_enable(EN_ES_READER) = val(setting_val)
+	case "ES":	events_enable(EN_ES_STATE) = val(setting_val)
+	case "ED":	events_enable(EN_ES_DOOR) = val(setting_val)
+	case "EV":	events_enable(EN_ES_DEVICE) = val(setting_val)
+	case "EW":	events_enable(EN_ES_STATE_STOR) = val(setting_val)
+	case "EA":	events_enable(EN_ES_ACL) = val(setting_val)
+	case "EU":	events_enable(EN_ES_TURNSTYLE) = val(setting_val)
+	case "DS":  ds = setting_val
+	case "TZ":  tz = setting_val
+	case "AE":	ac_apb_enable = val(setting_val)
+	case "AT":	ac_apb_timeout = val(setting_val)
+	case "AD":	ac_apb_to_permission = val(setting_val)
+	case "AY":	ac_apb_type = val(setting_val)
+	case "AI":	ac_apb_to_type = val(setting_val)
+#if SUPPORTS_DISPLAY
+	case "B1":	ta_b1 = val(setting_val)
+				ta_btn_check()
+				display_ta_icons()
+	case "B2":	ta_b2 = val(setting_val)
+				ta_btn_check()
+				display_ta_icons()
+	case "B3":	ta_b3 = val(setting_val)
+				ta_btn_check()
+				display_ta_icons()
+	case "B4":	ta_b4 = val(setting_val)
+				ta_btn_check()
+				display_ta_icons()
+#endif
+	case "RS":	relays(index).relay_type = val(setting_val)
+		dim b as byte
+		if index < RELAYS_NUMBER then
+			b = 1
+			b = b shl index
+			if relay_emergency_status = EN_ES_EMERGENCY_ACTIVE then
+				if relay_perco = true then
+					if (pin_get_emergency_relays() and b) <> 0 then
+						relay_set_emergency(index + 1, OPENED)
+					else
+						relay_set_emergency(index + 1, CLOSED)
+					end if
+				else
+					relay_set_emergency(index + 1, OPENED)
+				end if
+			end if
+			if relay_block_status = EN_BS_BLOCK_ACTIVE then
+				if relay_perco = true then
+					if (pin_get_block_relays() and b) <> 0 then
+						relay_set_block(index + 1, OPENED)
+					else
+						relay_set_block(index + 1, CLOSED)
+					end if
+				else
+					relay_set_block(index + 1, CLOSED)
+				end if
+			end if
+			if relays(index).status = OPENED then
+				relay_change_status(index + 1, OPENED, false)
+			end if
+			if relays(index).status = LONG_OPENED then
+				relay_change_status(index + 1, LONG_OPENED, false)
+			end if
+			if relays(index).status = CLOSED then
+				relay_change_status(index + 1, CLOSED, false)
+			end if
+		end if
+
+	end select
+
+#if DEV_DEBUG_PRINT
+	dev_debugprint("SET SETTINGS: " + setting_name + ", index:" + str(index) + ", value:" + setting_val)
+#endif
+
+'----------------------------------------------------
+'|	end AccessControl									|
+'----------------------------------------------------
+
+end function
+
+'------------------------------------------------------------------------------
+sub callback_agg_setting_error(byref setting_name as string, error_code as en_stg_status_codes)
+
+end sub
+
+'------------------------------------------------------------------------------
+function callback_agg_device_function(byref function_name as string ,byref context_name as string, byref function_input as string, byref function_output as string) as ok_ng
+	dim channel as byte
+	dim s as string
+	
+	select case function_name
+	case "init":
+		if proc_device_op("I","")="A" then
+			callback_agg_device_function=OK
+		else
+			callback_agg_device_function=NG
+		end if
+	case "reboot":
+		if proc_device_op("R","")="A" then
+			callback_agg_device_function=OK
+		else
+			callback_agg_device_function=NG
+		end if
+	case "conn_p": 'remote modify agg connection parameters
+		test_connection_retry=3
+		s=agg_record_decode(function_input,0)
+		if s<>"" then
+			owner_name_temp=s
+			conn_p_modified=YES
+		end if
+
+		s=agg_record_decode(function_input,1)
+		if s<>"" then
+			device_name_temp=s
+			conn_p_modified=YES
+		end if
+		
+		s=agg_record_decode(function_input,2)
+		
+#if USE_DNS=0	
+		if s<>"" then
+			server_ip_temp=s
+			conn_p_modified=YES
+		end if		
+#else
+		dim s1 as string(64)
+		dim i,j,k as byte	
+
+		if s<>"" then
+			'try to see if s is an IP or a domain name by convert the string in to a ddval string and convert back, and check if it has same number of "."
+			i=1
+			j=0
+			while i>0
+				i=instr(i,s,".",1)
+				if i>0 then
+					i=i+1
+					j=j+1
+				end if
+			wend
+			s1=ddval(s)
+			if s1="" then
+				k=j+1
+			else
+				s1=ddstr(s1)
+				i=1
+				k=0
+				while i>0
+					i=instr(i,s1,".",1)
+					if i>0 then
+						i=i+1
+						k=k+1
+					end if
+				wend
+			end if
+			if j=k then
+				server_ip_temp=s
+				domain_name_temp=""
+			else
+				domain_name_temp=s
+				server_ip_temp=""
+				server_ip_obtain=NO
+			end if
+			conn_p_modified=YES
+		end if
+
+#endif
+		if conn_p_modified=YES then
+			agg_test_connection_timer=3
+		end if
+		callback_agg_device_function=OK
+
+'----------------------------------------------------
+'|	AccessControl									|
+'----------------------------------------------------
+	case "EmgSet":
+		function_output = ""
+		agg_record_encode(function_output, Str(function_emergency_set()))
+		callback_agg_device_function = OK
+		
+	case "EmgReset":
+		function_output = ""
+		agg_record_encode(function_output, Str(function_emergency_reset()))
+		callback_agg_device_function = OK
+	case "BlockSet":
+		function_output = ""
+		agg_record_encode(function_output, Str(function_block_set()))
+		callback_agg_device_function = OK
+		
+	case "BlockReset":
+		function_output = ""
+		agg_record_encode(function_output, Str(function_block_reset()))
+		callback_agg_device_function = OK
+		
+	case "ChOpen":
+		channel = val(agg_record_decode(function_input, 0))
+		function_output = ""
+		agg_record_encode(function_output, Str(function_channel_open(channel)))
+		callback_agg_device_function = OK
+		
+	case "ChOpenLong":
+		channel = val(agg_record_decode(function_input, 0))
+		function_output = ""
+		agg_record_encode(function_output, Str(function_channel_open_long(channel)))
+		callback_agg_device_function = OK
+		
+	case "ChCloseLong":
+		channel = val(agg_record_decode(function_input, 0))
+		function_output = ""
+		agg_record_encode(function_output, Str(function_channel_close_long(channel)))
+		callback_agg_device_function = OK
+
+	case "diskFormat":
+		fd.format(fd.availableflashspace, 16)
+		fd.mount()
+		callback_agg_device_function = OK
+		
+	case "apbfunction":
+		'APB result form AGG
+		function_output = ""
+		agg_record_decode(function_input, 2)
+		agg_record_encode(function_output, Str(serial_apb_result(val(agg_record_decode(function_input,0))-1, val(agg_record_decode(function_input,1)), agg_record_decode(function_input,2))))
+		callback_agg_device_function = OK
+
+	case "confirmEvent":
+		dim id as string
+		dim idi as long
+		id = agg_record_decode(function_input, 0)
+		idi = lval(id)
+		' Array Events Confirm
+		event_confirm_agg(idi)
+		' AGG Table Events Confirm
+		agg_event_confirm(idi)
+		callback_agg_device_function = OK
+'----------------------------------------------------
+'|	end AccessControl								|
+'----------------------------------------------------
+
+	case else:
+		callback_agg_device_function=NG
+	end select
+
+end function
+
+'------------------------------------------------------------------------------
+sub callback_agg_rtc_sg(byref wdaycount as word, byref wmincount as word, byref bsec as byte, byref wmilsec as word, op as en_agg_rdwr)
+	select case op
+	case EN_AGG_GET:
+		rtc.getdata(wdaycount,wmincount,bsec)
+		wmilsec=0
+	case EN_AGG_SET:
+		rtc.setdata(wdaycount,wmincount,bsec)
+	end select
+end sub
+
+
+'#if AGG_TABLE_CONTROL
+'------------------------------------------------------------------------------
+sub callback_agg_table_error(byref table_name as string, error_code as en_tbl_status_codes)
+
+end sub
+'------------------------------------------------------------------------------
+sub callback_agg_convert_table_field(byref table_name as string, byref field_name as string, byref field_value as string, op as en_agg_rdwr)
+
+'	#if DEV_DEBUG_PRINT
+'		if (op = EN_AGG_GET) then
+'			dev_debugprint("GET CONVERT: table:" + table_name + ", field:" + field_name + ", value:" + field_value)
+'		else
+'			dev_debugprint("SET CONVERT: table:" + table_name + ", field:" + field_name + ", value:" + field_value)
+'		end if
+'	#endif
+
+end sub
+'#endif
+
+sub callback_agg_convert_event_field(byref table_name as string, byref field_name as string, byref field_value as string)
+end sub
+
+'------------------------------------------------------------------------------
+function callback_agg_convert_setting(byref setting_name as string, index as byte, byref setting_value as string, op as en_agg_rdwr) as ok_ng
+
+	callback_agg_convert_setting=OK
+	device_stg_mod_sg(setting_name,index,setting_value,op)
+	
+end function
+
+'------------------------------------------------------------------------------
+sub callback_agg_synchronized()
+	login_timeout_reset()
+	agg_retry_counter=AGG_MAX_RETRY
+	
+	' Access Control flag
+	flag_need_init = true
+	
+	'remote modify agg connection parameters
+	if test_connection_retry>0 then
+		if conn_p_modified=YES then
+			stg_set("ON",0,owner_name_temp)
+			stg_set("DN",0,device_name_temp)
+			stg_set("TI",0,server_ip_temp)
+			#if USE_DNS
+				stg_set("TN",0,domain_name_temp)
+			#endif
+			conn_p_modified=NO
+		end if
+		test_connection_retry=0
+	end if
+	
+	'dim s, event_str as string
+	'dim dcount,mcount as word
+	'dim sec as byte
+
+	'rtc.getdata(dcount,mcount,sec)
+	'td_to_str(s,dcount,mcount,sec,0)
+	'td_str_date_time_reformat(s,TD_STR_ADD_FORMATTING,TD_DATE_FORMAT_YYYYMMDD)
+	
+	'agg_record_encode(event_str,s)
+	'agg_fire_instant_event("root","DB",event_str,6)
+	
+end sub
+
+'------------------------------------------------------------------------------
+function callback_agg_get_firmware_version() as string
+	callback_agg_get_firmware_version=FIRMWARE_VERSION
+
+	if flag_update = false then
+		#if DEV_DEBUG_PRINT
+			dev_debugprint("Updating AGG tables...")
+		#endif
+		flag_update = true
+#if SUPPORTS_DISPLAY
+		display_lcd_access("UPDATE...", 150, 0, 80, 20, 31)
+#endif
+	end if
+	
+end function
+
+'------------------------------------------------------------------------------
+sub callback_agg_firmware_upload_progress(total_size as dword, remain_size as dword)
+#if SUPPORTS_DISPLAY
+
+	lcd.linewidth = 1
+
+	if remain_size = total_size then
+
+		lcd.forecolor = &hFFFF
+		lcd.backcolor = 31
+		lcd.filledrectangle(20, 20, 300, 220)
+
+		lcd.forecolor = &hFFFF
+		lcd.backcolor = &h0FF0
+		lcd.filledrectangle(30, 120, 290, 160)
+
+		display_lcd_access("-=+ FIRMWARE UPDATE +=-", 24, 65, 270, 20, 31)
+		display_lcd_access("UPLOAD PROGRESS...", 60, 170, 200, 20, 31)
+
+	end if
+	
+	lcd.forecolor = &hFFFF
+	lcd.backcolor = &hFF00
+	lcd.filledrectangle(30, 120, 290 - (260 * remain_size) / total_size, 160)
+	
+#endif
+end sub
+
+#endif
+
+'------------------------------------------------------------------------------
+#if NET_AVAILABLE
+sub ethernet_link_state_change(new_state as pl_net_linkstate)
+
+	if new_state=PL_NET_LINKSTAT_NOLINK then
+		'Ethernet is gone
+		#if DEV_DEBUG_PRINT
+			dev_debugprint("Ethernet FAILED")
+		#endif
+		interface_ready(PL_SOCK_INTERFACE_NET)=NO
+		
+		'See if we can replace it with something...
+		#if WLN_AVAILABLE
+			if param_we<>WE_DISABLED then
+				'Try to replace with Wi-Fi
+				if param_we=WE_ENABLED_ONDEMAND and wln_already_started=NO then
+					#if DEV_DEBUG_PRINT
+						dev_debugprint("Start Wi-Fi")
+					#endif
+					num_wln_failures=0
+					if wln_start(param_wa,param_ws,wln_password,PL_WLN_DOMAIN_FCC,no,PL_WLN_ASCAN_INFRASTRUCTURE)<>WLN_STATUS_OK then
+						#if DEV_DEBUG_PRINT
+							dev_debugprint("Wi-Fi MALFUNCTIONED (could not start)")
+						#endif
+						wln_error=YES
+					else
+						wln_error=NO
+						wln_already_started=YES
+					end if
+				end if
+				
+				if interface_ready(PL_SOCK_INTERFACE_WLN)=YES then
+					change_current_interface(PL_SOCK_INTERFACE_WLN)
+				end if
+				
+				'255 means Wi-Fi already fail and then we should allow GPRS to start (if enabled)
+				if num_wln_failures<>255 and wln_error=NO then
+					exit sub 
+				end if
+			end if
+		#endif
+
+		#if SUPPORTS_GPRS	
+			if param_ge<>GE_DISABLED then
+				'Try to replace with GPRS
+				if param_ge=GE_ENABLED_ONDEMAND and gprs_already_started=NO then
+					#if DEV_DEBUG_PRINT
+						dev_debugprint("Start GPRS")
+					#endif
+					if gprs_start(param_ga,param_gn,param_gu,param_gp)<>GPRS_STATUS_OK then
+						#if DEV_DEBUG_PRINT
+							dev_debugprint("GPRS MALFUNCTIONED (could not start)")
+						#endif
+						gprs_error=YES
+					else
+						gprs_error=NO
+						gprs_already_started=YES
+					end if
+				end if
+
+				if interface_ready(PL_SOCK_INTERFACE_PPP)=YES then
+					change_current_interface(PL_SOCK_INTERFACE_PPP)
+				end if
+			end if		
+		#endif
+	else	
+		'Ethernet will be used from now on
+		#if DEV_DEBUG_PRINT
+			dev_debugprint("Ethernet OK")
+		#endif
+		interface_ready(PL_SOCK_INTERFACE_NET)=YES
+
+		#if WLN_AVAILABLE	
+			'Stop Wi-Fi if it is in the on-demand mode 
+			if param_we=WE_ENABLED_ONDEMAND then
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("Stop Wi-Fi")
+				#endif
+				wln_stop()
+							
+				#if SUPPORTS_DISPLAY
+					if wln.enabled=NO then
+						print_wln_network_state(NETWORK_WLN_DISABLED)
+					end if
+				#endif				
+				interface_ready(PL_SOCK_INTERFACE_WLN)=NO
+				wln_already_started=NO
+			end if
+		#endif
+
+		#if SUPPORTS_GPRS
+			'Stop GPRS if it is in the on-demand mode
+			if param_ge=GE_ENABLED_ONDEMAND and gprs_already_started=YES then
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("Stop GPRS")
+				#endif
+				gprs_stop()
+				interface_ready(PL_SOCK_INTERFACE_PPP)=NO
+				gprs_already_started=NO
+			end if
+		#endif
+
+		change_current_interface(PL_SOCK_INTERFACE_NET)
+	end if
+end sub
+#endif
+
+'------------------------------------------------------------------------------
+sub close_interface_sockets(interface as pl_sock_interfaces)
+	dim f,sock_num_bup as byte
+	dim i as word
+	
+	sock_num_bup=sock.num
+	
+	for f=0 to sock.numofsock-1
+		sock.num=f
+		if sock.currentinterface=interface and sock.statesimple<>PL_SSTS_CLOSED then
+			sock.discard
+		end if
+	next f
+
+	i=sys.timercount
+
+wait_close_interface_sockets:
+	for f=0 to sock.numofsock-1
+		sock.num=f
+		if sock.currentinterface=interface and sock.statesimple<>PL_SSTS_CLOSED and sys.timercount-i<3 and sys.timercount>=i then
+			goto wait_close_interface_sockets
+		end if
+	next f
+
+	sock.num=sock_num_bup
+end sub
+
+'------------------------------------------------------------------------------
+sub change_current_interface(new_interface as pl_sock_interfaces)
+	if current_interface<>new_interface then
+		'this will allow immediate logins on the new current interface
+		#if SUPPORTS_AGG
+			if login_mode=CMD_MODE_AGGREGATE then
+				agg_stop()
+			end if
+		#endif
+		
+		#if SUPPORT_HTML
+			if login_mode=CMD_MODE_HTTP or login_mode=CMD_MODE_UDP then
+				login_mode=CMD_MODE_NONE
+			end if
+		#endif
+		
+		sock.inconenabledmaster=NO
+		close_interface_sockets(current_interface)
+
+		current_interface=new_interface
+		
+		#if SUPPORTS_DS
+			'receive UDP commands on the new current interface only
+			sock.num=udp_sock
+			select case current_interface
+			#if NET_AVAILABLE
+				case PL_SOCK_INTERFACE_NET: sock.allowedinterfaces="NET"
+			#endif
+			#if WLN_AVAILABLE	
+				case PL_SOCK_INTERFACE_WLN: sock.allowedinterfaces="WLN"
+			#endif	
+			case PL_SOCK_INTERFACE_PPP: sock.allowedinterfaces="PPP"
+			end select		
+			sock.inconenabledmaster=YES
+		#endif
+		
+		#if DEV_DEBUG_PRINT
+			select case current_interface
+			#if NET_AVAILABLE
+				case PL_SOCK_INTERFACE_NET: dev_debugprint("Set current interface to Ethernet") 
+			#endif
+			
+			#if WLN_AVAILABLE	
+				case PL_SOCK_INTERFACE_WLN: dev_debugprint("Set current interface to Wi-Fi")
+			#endif	
+			case PL_SOCK_INTERFACE_PPP: dev_debugprint("Set current interface to GPRS")
+			end select
+		#endif
+	end if
+end sub
+
+'------------------------------------------------------------------------------
+#if WLN_AVAILABLE
+sub callback_wln_ok()
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Wi-Fi OK")
+	#endif
+	interface_ready(PL_SOCK_INTERFACE_WLN)=YES
+	num_wln_failures=0
+
+	'Should Wi-Fi become our current interface?
+	#if NET_AVAILABLE
+	if interface_ready(PL_SOCK_INTERFACE_NET)=NO then
+	#endif
+		change_current_interface(PL_SOCK_INTERFACE_WLN)
+
+		#if SUPPORTS_GPRS
+			'Stop GPRS if it is in the on-demand mode
+			if param_ge=GE_ENABLED_ONDEMAND and gprs_already_started=YES then
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("Stop GPRS")
+				#endif
+				gprs_stop()
+				interface_ready(PL_SOCK_INTERFACE_PPP)=NO
+				gprs_already_started=NO
+			end if
+		#endif
+	#if NET_AVAILABLE
+	end if
+	#endif
+	
+	#if SUPPORTS_DISPLAY	
+		if param_wd=NO then
+			print_wln_network_state(NETWORK_DHCP_FIXED_IP)
+		end if	
+
+		if wln_network_state<>NETWORK_DHCP_IP_OBTAINED and wln_network_state<>NETWORK_DHCP_FIXED_IP then 
+			print_wln_network_state(NETWORK_WLN_JOINED)
+		end if
+	#endif
+	
+end sub
+
+#endif
+
+'------------------------------------------------------------------------------
+#if WLN_AVAILABLE
+sub callback_wln_failure(wln_state as en_wln_status_codes)
+	dim new_state as en_network_states
+	
+	if num_wln_failures=255 then exit sub
+
+	if num_wln_failures<MAX_NUM_WLN_FAILURES then
+		num_wln_failures=num_wln_failures+1
+	else
+		num_wln_failures=255
+		#if DEV_DEBUG_PRINT
+			dev_debugprint("Wi-Fi FAILED")
+		#endif
+		interface_ready(PL_SOCK_INTERFACE_WLN)=NO
+
+		#if SUPPORTS_GPRS	
+			if param_ge<>GE_DISABLED and interface_ready(PL_SOCK_INTERFACE_NET)=NO then
+				'Try to replace with GPRS
+				if param_ge=GE_ENABLED_ONDEMAND and gprs_already_started=NO then
+					#if DEV_DEBUG_PRINT
+						dev_debugprint("Start GPRS")
+					#endif
+					if gprs_start(param_ga,param_gn,param_gu,param_gp)<>GPRS_STATUS_OK then
+						#if DEV_DEBUG_PRINT
+							dev_debugprint("GPRS MALFUNCTIONED (could not start)")
+						#endif
+						gprs_error=YES
+					else
+						gprs_error=NO
+						gprs_already_started=YES
+					end if
+				end if
+
+				if interface_ready(PL_SOCK_INTERFACE_PPP)=YES and interface_ready(PL_SOCK_INTERFACE_NET)=NO then
+					change_current_interface(PL_SOCK_INTERFACE_PPP)
+				end if
+			end if		
+		#endif		
+	end if
+
+	#if SUPPORTS_DISPLAY
+		select case wln_state
+		case WLN_STATUS_SCANNING_FAILURE:
+			new_state=NETWORK_WLN_SCANNING_FAIL
+		
+		case WLN_STATUS_ASSOCIATION_FAILURE:
+			new_state=NETWORK_WLN_ASSOCIATION_FAIL
+		
+		case WLN_STATUS_DISASSOCIATION:
+			new_state=NETWORK_WLN_DISASSOCIATE
+		
+		case else:
+			new_state=NETWORK_WLN_FATAL_ERROR
+		
+		end select
+		
+		print_wln_network_state(new_state)	
+	#endif	
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_wln_mkey_progress_update(progress as byte)
+	#if SUPPORTS_DISPLAY
+	lcd_print_msg("Calculating... "+str(progress)+"%",0,lcd.height-lcd.fontheight*2,lcd.width,lcd.fontheight+2,PL_LCD_TEXT_ALIGNMENT_TOP_CENTER,NO)
+	#endif
+end sub
+
+
+'------------------------------------------------------------------------------
+sub callback_wln_pre_buffrq(required_buff_pages as byte)
+end sub
+
+
+'------------------------------------------------------------------------------
+sub callback_wln_rescan_result(current_rssi as byte, scan_rssi as byte, different_ap as no_yes)
+	dim f as byte
+	dim s1, s2, s3, s4 as string(32)
+	
+	wln_rescanning=NO
+	
+	if different_ap=NO then
+		goto reprint_ip
+	end if
+	
+	if scan_rssi<current_rssi then
+		goto reprint_ip
+	end if
+	
+	if scan_rssi-current_rssi<5 then
+reprint_ip:	
+		#if SUPPORTS_DISPLAY
+			print_wln_network_state(NETWORK_REPRINT_PREVIOUS_STATE)	'reprint IP
+		#endif
+		
+		exit sub
+	end if
+	
+	s1=stg_get("WA",0)
+	
+	select case param_ws
+	case WLN_SECURITY_MODE_DISABLED:
+		s2=""
+	case WLN_SECURITY_MODE_WEP64,WLN_SECURITY_MODE_WEP128:
+		s2=stg_get("WP",0)
+		
+		if param_ws=WLN_SECURITY_MODE_WEP64 and len(s2)=5 then
+			s4=""
+			for f=1 to 5
+				s3=mid(s2,f,1)
+				s3=hex(asc(s3))
+				s3=right(s3,len(s3)-2)
+				if len(s3)<2 then s3="0"+s3
+				s4=s4+s3
+			next f
+			s2=s4
+		end if
+		
+		if param_ws=WLN_SECURITY_MODE_WEP128 and len(s2)=13 then
+			s4=""
+			for f=1 to 13
+				s3=mid(s2,f,1)
+				s3=hex(asc(s3))
+				s3=right(s3,len(s3)-2)
+				if len(s3)<2 then s3="0"+s3
+				s4=s4+s3
+			next f
+			s2=s4
+		end if
+			
+	case else:
+		s2=stg_get("WK",0)
+	end select
+	
+	wln_want_to_change_ap=YES
+	wln_change(s1,param_ws,s2) 'this could fail but we don't care
+
+end sub
+
+'----------------------------------------------------------------------------
+sub callback_wln_starting_association()
+	#if SUPPORTS_DISPLAY 
+		print_wln_network_state(NETWORK_WLN_JOINING)
+	#endif
+end sub
+
+'----------------------------------------------------------------------------
+sub callback_wln_rescan_for_better_ap()
+	wln_rescanning=YES
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_update_rssi()
+	if wln_check_association()<>WLN_ASSOCIATION_RETVAL_YES then exit sub
+	rssi_update_timer=rssi_update_timer-1
+	if rssi_update_timer=0 then
+		wln_update_rssi()
+		rssi_update_timer=RSSI_UPDATE_TIMER_CTR
+	end if
+	
+end sub
+#endif
+
+'---------------------------------------------------------------------------------------------------
+#if WLN_AVAILABLE and SUPPORTS_DISPLAY
+
+function get_ap_name() as string
+	get_ap_name=stg_get("WA",0)
+	
+	if len(get_ap_name)>9 then
+		get_ap_name=left(get_ap_name,8)
+		get_ap_name=get_ap_name+"."
+	end if
+end function
+
+'----------------------------------------------------------------------------
+public sub print_wln_network_state(new_state as en_network_states)
+	dim s1 as string(32)
+	
+	if enter_menu=YES then exit sub 
+	
+	if new_state=NETWORK_REPRINT_PREVIOUS_STATE then
+		new_state=wln_network_state
+	else
+		if wln_network_state=new_state then
+			exit sub
+		end if
+		wln_network_state=new_state
+	end if
+
+	select case wln_network_state
+	case NETWORK_INIT:
+		s1=""
+	
+	case NETWORK_WLN_JOINING:
+		s1=get_ap_name()
+		s1="Joining '"+s1+"'"
+	
+	case NETWORK_WLN_JOINED:
+		s1=get_ap_name()
+		s1="Joined '"+s1+"'"
+	
+	case NETWORK_WLN_DISABLED:
+		s1="Disabled"
+	
+	case NETWORK_WLN_FATAL_ERROR:
+		s1="Internal Wi-Fi error"
+	
+	case NETWORK_WLN_INVALID_WKEY:
+		s1="Invalid password"
+	
+	case NETWORK_WLN_SCANNING_FAIL:
+		s1=get_ap_name()
+		s1="Could not find '"+s1+"'"
+	
+	case NETWORK_WLN_ASSOCIATION_FAIL:
+		if wln_want_to_change_ap=NO then
+			s1=get_ap_name()
+			s1="Failed to join '"+s1+"'"
+		else
+			s1="Switching AP..."
+			wln_want_to_change_ap=NO
+		end if
+
+	case NETWORK_WLN_DISASSOCIATE:
+		if wln_want_to_change_ap=NO then
+			s1=get_ap_name()
+			s1="Lost '"+s1+"'"
+		else
+			s1="Switching AP..."
+			wln_want_to_change_ap=NO
+		end if
+	
+	case NETWORK_DHCP_FIXED_IP:
+		if wln_rescanning<>NO then
+			s1="Looking for better AP..."
+		else
+			s1=wln.ip+" (M)"			
+		end if
+	
+	case NETWORK_DHCP_OBTAINING_IP:
+		if wln_rescanning<>NO then
+			s1="Looking for better AP..."
+		else
+			s1="Obtaining IP address..."
+		end if
+	
+	case NETWORK_DHCP_FAIL_OBTAINING_IP:
+		if wln_rescanning<>NO then
+			s1="Looking for better AP..."
+		else
+			s1=wln.ip+" (F)"			
+		end if
+
+	case NETWORK_DHCP_IP_OBTAINED:
+		if wln_rescanning<>NO then
+			s1="Looking for better AP..."
+		else
+			s1=wln.ip+" (D)"			
+		end if
+	end select
+
+'	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_MIDDLE_CENTER
+'	romfile.open(LCD_STD_FONT)
+'	lcd.setfont(romfile.offset)	
+'	lcd.textverticalspacing=2
+'	lcd.texthorizontalspacing=2
+	
+'	lcd.forecolor=BG_BLUE
+'	lcd.fill(130,90,190,40)
+	
+'	lcd.forecolor=LCD_FORECOLOR
+'	lcd.backcolor=BG_BLUE
+	
+'	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_TOP_RIGHT
+'	lcd.printaligned("Wi-Fi IP: ",30,90,100,40)
+
+'	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_TOP_LEFT
+'	lcd.printaligned(s1, 130,90,190,40)
+end sub
+#endif
+
+#if SUPPORTS_DISPLAY
+'----------------------------------------------------------------------------
+public sub print_wifi()
+	dim icon as byte
+	dim s as string(8)
+
+	if enter_menu=YES then exit sub
+	
+	#if WLN_AVAILABLE
+		if wln.enabled=YES then
+			select case wln_network_state
+			case NETWORK_WLN_DISABLED:
+				exit sub
+				
+			case NETWORK_DHCP_FIXED_IP, NETWORK_DHCP_OBTAINING_IP, NETWORK_DHCP_FAIL_OBTAINING_IP, NETWORK_DHCP_IP_OBTAINED, NETWORK_WLN_JOINED:
+				if wln.rssi<WLN_RSSI_1 then
+					icon=0
+				end if
+				if wln.rssi<WLN_RSSI_2 and wln.rssi>=WLN_RSSI_1 then
+					icon=1
+				end if
+				if wln.rssi<WLN_RSSI_3 and wln.rssi>=WLN_RSSI_2 then
+					icon=2
+				end if		
+				if wln.rssi<WLN_RSSI_4 and wln.rssi>=WLN_RSSI_3 then
+					icon=3
+				end if
+				if wln.rssi>=WLN_RSSI_4 then
+					icon=4
+				end if
+				
+			case NETWORK_WLN_SCANNING_FAIL, NETWORK_WLN_JOINING:
+				icon=5	
+
+			case NETWORK_WLN_DISASSOCIATE, NETWORK_WLN_ASSOCIATION_FAIL:
+				icon=6
+				
+			case NETWORK_WLN_INVALID_WKEY:
+				icon=8
+				
+			case else
+				icon=7
+
+			end select
+		else
+			icon=7
+		end if
+	#else
+		icon=7
+	#endif
+	
+	if icon<>prev_icon then
+		romfile.open("wifi.bmp")
+		lcd.bmp(romfile.offset,78,0,icon*24,0,24,18)
+		prev_icon=icon
+	end if
+
+	romfile.open("Tibbo-5x7(V).bin")
+	lcd.setfont(romfile.offset)
+	lcd.texthorizontalspacing=1
+	lcd.forecolor=TXT_GRAY
+	lcd.backcolor=LCD_BACKCOLOR
+	
+	select case login_mode
+	
+	case CMD_MODE_AGGREGATE:
+		s="AGG"
+		lcd.print(s,107,1)
+		sock.num=agg_sock
+		select case sock.statesimple
+		case PL_SSTS_CLOSED:
+			select case sock.state
+			case PL_SST_CL_PCLOSED,PL_SST_CL_PRESET_POPENING, PL_SST_CL_PRESET_AOPENING,
+			PL_SST_CL_PRESET_EST,PL_SST_CL_PRESET_PCLOSING,PL_SST_CL_PRESET_ACLOSING,
+			PL_SST_CL_PRESET_STRANGE,PL_SST_PC:
+				s="XXXX"
+			case else:
+				s="----"
+			end select
+				
+		case PL_SSTS_ARP:
+			s="O)))"
+		
+		case PL_SSTS_PO,PL_SSTS_AO:
+			s="O==>"
+		
+		case PL_SSTS_EST:		
+			if agg_cmd_received=YES then
+				agg_cmd_received=NO
+				agg_cmd_progress=agg_cmd_progress+1
+				if agg_cmd_progress>3 then agg_cmd_progress=0
+				select case agg_cmd_progress
+				case 0:s=">==="
+				case 1:s="=>=="
+				case 2:s="==>="
+				case 3:s="===>"
+				end select
+			else
+				s="===="
+			end if	
+		end select	
+		lcd.print(s,107,11)		
+		
+	case CMD_MODE_HTTP:
+		s="HTML"
+		lcd.print(s,107,1)
+		s="===="
+		lcd.print(s,107,11)
+	case else
+		s="    "
+		lcd.print(s,107,1)
+		s="----"
+		lcd.print(s,107,11)
+	end select
+end sub
+#if NET_AVAILABLE
+sub print_lan_network_state(new_state as en_network_states)
+	dim s1 as string(32)
+	
+	if enter_menu=YES then exit sub 
+	
+	if new_state=NETWORK_REPRINT_PREVIOUS_STATE then
+		new_state=lan_network_state
+	else
+		if lan_network_state=new_state then
+			exit sub
+		end if
+		lan_network_state=new_state
+	end if
+
+	select case lan_network_state
+	case NETWORK_INIT:
+		s1=""
+	
+	case NETWORK_DHCP_FIXED_IP:
+		s1=net.ip+" (M)"			
+
+	case NETWORK_DHCP_OBTAINING_IP:
+		s1="Obtaining IP address..."
+	
+	case NETWORK_DHCP_FAIL_OBTAINING_IP:
+		s1=net.ip+" (F)"			
+
+	case NETWORK_DHCP_IP_OBTAINED:
+		s1=net.ip+" (D)"			
+
+	end select
+
+'	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_MIDDLE_CENTER
+'	romfile.open(LCD_STD_FONT)
+'	lcd.setfont(romfile.offset)	
+'	lcd.textverticalspacing=2
+'	lcd.texthorizontalspacing=2
+
+'	lcd.forecolor=LCD_FORECOLOR
+'	lcd.backcolor=BG_BLUE
+	
+'	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_TOP_RIGHT
+'	lcd.printaligned("LAN IP: ",30,70,100,20)
+
+'	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_TOP_LEFT
+'	lcd.printaligned(s1, 130,70,190,20)
+end sub
+#endif
+#endif
+'------------------------------------------------------------------------------
+#if SUPPORTS_GPRS
+sub callback_gprs_ok()
+	
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("GPRS OK")
+	#endif
+	interface_ready(PL_SOCK_INTERFACE_PPP)=YES
+
+	'Should GPRS become our current interface?
+	
+	#if NET_AVAILABLE
+		if interface_ready(PL_SOCK_INTERFACE_NET)=YES then
+			exit sub
+		end if
+	#endif
+
+	#if WLN_AVAILABLE 
+		if interface_ready(PL_SOCK_INTERFACE_WLN)=YES
+			exit sub
+		end if
+	#endif
+
+	change_current_interface(PL_SOCK_INTERFACE_PPP)
+
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_gprs_failure()
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("GPRS FAILED")
+	#endif
+	if login_mode=CMD_MODE_AGGREGATE and current_interface=PL_SOCK_INTERFACE_PPP then
+		agg_stop()
+	end if
+		
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_gprs_pre_buffrq(required_buff_pages as byte)
+end sub
+#endif
+'------------------------------------------------------------------------------
+sub callback_dhcp_ok(renew as no_yes, interface as pl_sock_interfaces, byref ip as string, byref gateway_ip as string, byref netmask as string, lease_time as dword)
+	#if NET_AVAILABLE
+		if interface=PL_SOCK_INTERFACE_NET then
+			if renew=YES and net.ip<>ip then
+				'this is a lease renewal and the DHCP server has issues new IP
+				'it is better to reboot than deal with the implications of the changed IP
+				sys.reboot
+			end if
+
+			#if DEV_DEBUG_PRINT
+				dev_debugprint("Ethernet DHCP OK ("+ip+")")
+			#endif
+
+			if net.ip<>ip then
+				sock.inconenabledmaster=NO
+				close_interface_sockets(PL_SOCK_INTERFACE_NET)
+				net.ip=ip
+				net.gatewayip=gateway_ip
+				net.netmask=netmask
+				sock.inconenabledmaster=YES
+
+				if stg_get("IP",0)<>ip then
+					stg_set("IP",0,ip)
+				end if
+				if stg_get("GI",0)<>gateway_ip then
+					stg_set("GI",0,gateway_ip)
+				end if
+				if stg_get("NM",0)<>netmask then
+					stg_set("NM",0,netmask)
+				end if
+			end if
+			
+			#if SUPPORTS_DS
+				declare_ip_obtained(PL_SOCK_INTERFACE_NET)
+			#endif
+			
+			#if SUPPORTS_DISPLAY and NET_AVAILABLE
+				print_lan_network_state(NETWORK_DHCP_IP_OBTAINED)
+			#endif		
+		end if
+	#endif
+	#if WLN_AVAILABLE	
+		if interface=PL_SOCK_INTERFACE_WLN then
+			if renew=YES and wln.ip<>ip then
+				'this is a lease renewal and the DHCP server has issues new IP
+				'it is better to reboot than deal with the implications of the changed IP
+				sys.reboot
+			end if
+			
+			#if DEV_DEBUG_PRINT
+				dev_debugprint("Wi-Fi DHCP OK ("+ip+")")
+			#endif
+			
+			if wln.ip<>ip then
+				sock.inconenabledmaster=NO
+				close_interface_sockets(PL_SOCK_INTERFACE_WLN)
+				wln.ip=ip
+				wln.gatewayip=gateway_ip
+				wln.netmask=netmask
+				sock.inconenabledmaster=YES
+				
+				if stg_get("WI",0)<>ip then
+					stg_set("WI",0,ip)
+				end if
+				if stg_get("WG",0)<>gateway_ip then
+					stg_set("WG",0,gateway_ip)
+				end if
+				if stg_get("WN",0)<>netmask then
+					stg_set("WN",0,netmask)
+				end if
+			end if
+			
+			#if SUPPORTS_DS
+				declare_ip_obtained(PL_SOCK_INTERFACE_WLN)
+			#endif
+			
+			#if SUPPORTS_DISPLAY
+				print_wln_network_state(NETWORK_DHCP_IP_OBTAINED)
+			#endif			
+		end if
+
+	#endif
+
+	ip_configured(interface)=YES
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_dhcp_failure(interface as pl_sock_interfaces,failure_code as en_dhcp_status_codes)
+	
+	sock.inconenabledmaster=NO
+	close_interface_sockets(interface)
+	#if NET_AVAILABLE
+		if interface=PL_SOCK_INTERFACE_NET then
+			#if DEV_DEBUG_PRINT
+				dev_debugprint("Ethernet DHCP FAILED")
+			#endif
+			net.ip=validate_ip(stg_get("IP",0))
+			
+			#if SUPPORTS_DS
+				declare_ip_set(PL_SOCK_INTERFACE_NET)
+			#endif
+			
+			#if SUPPORTS_DISPLAY and NET_AVAILABLE
+				print_lan_network_state(NETWORK_DHCP_FAIL_OBTAINING_IP)
+			#endif
+		end if
+	#endif
+	
+	#if WLN_AVAILABLE
+		if interface=PL_SOCK_INTERFACE_WLN then
+			#if DEV_DEBUG_PRINT
+				dev_debugprint("Wi-Fi DHCP FAILED")
+			#endif
+			wln.ip=validate_ip(stg_get("WI",0))
+			
+			#if SUPPORTS_DS
+				declare_ip_set(PL_SOCK_INTERFACE_WLN)
+			#endif
+			
+			#if SUPPORTS_DISPLAY
+				print_wln_network_state(NETWORK_DHCP_FAIL_OBTAINING_IP)
+			#endif
+		end if
+	#endif
+	sock.inconenabledmaster=YES
+	ip_configured(interface)=YES	
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_dhcp_pre_clear_ip(interface as pl_sock_interfaces)
+	ip_configured(interface)=NO
+	close_interface_sockets(interface)
+
+	#if SUPPORTS_DISPLAY and NET_AVAILABLE
+		if interface=PL_SOCK_INTERFACE_NET then
+			print_lan_network_state(NETWORK_DHCP_OBTAINING_IP)
+		end if
+	#endif
+	
+	#if WLN_AVAILABLE and SUPPORTS_DISPLAY
+		if interface=PL_SOCK_INTERFACE_WLN then
+			print_wln_network_state(NETWORK_DHCP_OBTAINING_IP)
+		end if
+	#endif
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_dhcp_pre_buffrq(required_buff_pages as byte)
+	http_buff_rq(HTTP_BUFF_DISALLOCATE)
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_dhcp_buff_released()
+	if http_buff_rq(HTTP_BUFF_ALLOCATE)<>OK then
+		'insufficient memory
+	end if
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_stg_error(byref stg_name_or_num as string,index as byte,status as en_stg_status_codes)
+	#if SUPPORTS_DS
+		declare_error_mode()
+	#endif
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_stg_pre_get(byref stg_name_or_num as string,index as byte,byref stg_value as string)
+
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_stg_post_set(byref stg_name_or_num as string, index as byte,byref stg_value as string)
+	
+	rtc.getdata(stg_timestamp.ts_daycount,stg_timestamp.ts_mincount,stg_timestamp.ts_seconds)
+	stg_timestamp.ts_milsec=999
+	stg_set_ts(stg_name_or_num)
+
+	if index=255 then exit sub
+	
+	select case stg_name_or_num
+	
+	#if SUPPORTS_AGG
+	case "AR":
+		param_ar=val(stg_value)
+	#endif
+	
+	#if USE_DNS		
+		case "TN":
+			if stg_value<>"" then
+				server_ip_obtain=NO
+				if login_mode=CMD_MODE_AGGREGATE then
+					agg_stop()
+				end if				
+			end if
+	#endif
+	
+	case else:
+	end select
+	
+end sub
+
+'------------------------------------------------------------------------------
+#if SUPPORT_HTML
+sub callback_html_stg_mod_sg(byref setting_name as string, index as byte, byref setting_value as string, op as en_stg_rdwr)
+
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_html_session_login()
+	#if SUPPORTS_AGG
+		dim b as byte
+		
+		b=sock.num
+		agg_stop()
+		sock.num=b	
+	#endif
+end sub
+#endif
+
+'------------------------------------------------------------------------------
+#if USE_SNTP
+sub callback_sntp_failure(sntp_status as en_sntp_status_codes)
+
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_sntp_ok(byref w_days as word,byref w_mins as word,byref b_seconds as byte)
+	rtc.setdata(w_days,w_mins,b_seconds)
+	last_sntp_date=w_days
+	
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_sntp_pre_buffrq(required_buff_pages as byte)
+
+end sub
+#endif
+
+'------------------------------------------------------------------------------
+#if	SUPPORTS_TABLE
+sub callback_tbl_error(status as en_tbl_status_codes)
+	
+end sub
+
+'------------------------------------------------------------------------------
+function callback_tbl_fail_to_open(byref filename as string, status as pl_fd_status_codes, filenum as byte) as no_yes
+	
+end function
+
+'------------------------------------------------------------------------------
+sub callback_tbl_field_error(byref file_name as string,byref field_name as string,tbl_result as en_tbl_status_codes)
+	
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_tbl_modified(byref file_name as string, modified_operation as en_tbl_modified_operation)
+	
+end sub
+#endif
+
+'------------------------------------------------------------------------------
+public function proc_device_op(byref param1 as string, byref param2 as string) as string(1)
+
+	select case param1
+	case "I":
+		select case device_setting_init(EN_STG_INIT_MODE_NORMAL)
+		case ok:
+			proc_device_op="A"
+		case else:
+			proc_device_op="E"
+			exit function
+		end select
+	case "R":
+		proc_device_op="A"
+		reboot_flag=YES
+		reboot_timer=6
+	end select
+end function
+
+'------------------------------------------------------------------------------
+public sub device_setting_set(sname as string(STG_MAX_SETTING_NAME_LEN), index as byte, byref s as string)
+	'********** ADDITIONAL CODE MAY BE NEEDED **********
+end sub
+
+'------------------------------------------------------------------------------
+public function device_setting_check(byref setting_name as string,byref setting_val as string) as ok_ng
+	'********** ADDITIONAL CODE MAY BE NEEDED **********
+	device_setting_check = OK
+end function 
+
+'------------------------------------------------------------------------------
+public sub callback_login_event(mode as cmd_modes)
+
+end sub
+
+'------------------------------------------------------------------------------
+public function callback_get_timeout(mode as cmd_modes) as word
+
+	select case mode
+	case CMD_MODE_NONE:
+	#if SUPPORTS_AGG		 
+		case CMD_MODE_AGGREGATE:
+			callback_get_timeout=0
+	#endif
+
+	#if SUPPORT_HTML	
+		case CMD_MODE_HTTP:
+			goto get_timeout
+	#endif
+
+	#if SUPPORTS_DS
+		case CMD_MODE_UDP:
+			goto get_timeout
+	#endif
+	case else
+get_timeout:
+		callback_get_timeout=LOGIN_TIMEOUT
+	end select
+		
+end function
+
+'------------------------------------------------------------------------------
+#if DEV_DEBUG_PRINT
+sub dev_debugprint(byref print_data as string)
+	sys.debugprint(DEV_STAMP+print_data+DEV_CR_LF)
+end sub
+#endif
+
+'------------------------------------------------------------------------------
+function validate_ip(byref ip as string) as string
+	dim x as byte
+	
+	validate_ip=ddval(ip)
+	
+	'first number can't be 0 or >223
+	x=asc(left(validate_ip,1))
+	if x=0 or x>223 then
+		insert(validate_ip,1,chr(1))
+	end if
+	
+	'last number can't be 0 or 255
+	x=asc(right(validate_ip,1))
+	if x=0 or x=255 then
+		insert(validate_ip,4,chr(1))
+	end if
+
+	validate_ip=ddstr(validate_ip)
+end function
+
+'------------------------------------------------------------------------------
+#if SIGNAL_STRENGTH_INDICATION=1
+sub signal_strength_indication_init()
+	dim f as byte
+	
+	'make sure there is no reset
+	io.num=SIGNAL_STRENGTH_CLR
+	io.enabled=YES
+	io.state=HIGH
+
+	'we will be turning LEDs off
+	io.num=SIGNAL_STRENGTH_DATA
+	io.enabled=YES
+	io.state=HIGH
+	'make 5 clocks
+	io.num=SIGNAL_STRENGTH_CK
+	io.enabled=YES
+	for f=0 to 4
+		io.state=LOW
+		io.state=HIGH
+	next f
+end sub
+#endif	
+
+'------------------------------------------------------------------------------
+#if SIGNAL_STRENGTH_INDICATION=1
+sub signal_strength_set(strength as byte)
+'Bits 0-5 of strength argument correspond to LEDs	
+	
+	dim f,x as byte
+	dim s as string(8)
+	
+	s=mid(bin(strength),3,8)
+	s=strgen(8-len(s),"0")+s	
+	
+	'make 5 clocks
+	io.num=SIGNAL_STRENGTH_CK
+	for f=0 to 4
+		x=1-val(mid(s,f+4,1))
+		io.lineset(SIGNAL_STRENGTH_DATA,x)
+		io.state=LOW
+		io.state=HIGH
+	next f
+end sub
+#endif	
+
+'------------------------------------------------------------------------------
+sub device_stg_mod_sg(byref stg_name as string, index as byte, byref stg_val as string, op as en_stg_rdwr)
+
+end sub
+
+'------------------------------------------------------------------------------
+public function http_buff_rq(op as en_http_buff_allocate) as ok_ng
+	dim f as byte
+	
+	http_buff_rq=OK
+	if op=HTTP_BUFF_ALLOCATE then
+		f=(SOCK_HTTP_TXBUFF_SIZE+1)*NUM_HTTP_SOCKETS
+		if sys.freebuffpages<f then
+			http_buff_rq=NG
+			exit function
+		end if
+		for f=0 to NUM_HTTP_SOCKETS-1
+			sock.num=sock_http(f)
+			sock.redir(PL_REDIR_SOCK0+sock_http(f))
+			sock.txbuffrq(SOCK_HTTP_TXBUFF_SIZE)
+			sock.varbuffrq(2)
+		next f
+	else
+		for f=0 to NUM_HTTP_SOCKETS-1
+			sock.num=sock_http(f)
+			sock.txbuffrq(0)
+			sock.varbuffrq(0)
+		next f	
+	end if
+	sys.buffalloc
+end function
+
+'------------------------------------------------------------------------------
+public function device_setting_init(init_mode as en_stg_init_modes) as ok_ng
+	#if SUPPORTS_DISPLAY
+		'turn on backlight
+		io.num=PL_IO_NUM_54 
+		io.state=LOW	
+		romfile.open(LCD_STD_FONT)
+		lcd.setfont(romfile.offset)	
+		lcd.forecolor=LCD_FORECOLOR
+		lcd.backcolor=LCD_BACKCOLOR
+		lcd_clear(40,30,240,180)
+		lcd_print_msg("Initializing...",40,30,240,180,PL_LCD_TEXT_ALIGNMENT_MIDDLE_CENTER,YES)
+	#endif
+	pat.play(PAT_BOTH_OFF,PL_PAT_CANINT)
+	if stg_restore_multiple(init_mode)<>EN_STG_STATUS_OK then
+		pat.play(PAT_LONG_RED,PL_PAT_CANINT)
+		#if BEEP_AVAILABLE
+			beep.play(BEEP_LONG,PL_BEEP_CANINT)
+		#endif
+		device_setting_init=NG
+	else
+		pat.play(PAT_LONG_GREEN,PL_PAT_CANINT)
+		#if BEEP_AVAILABLE
+			beep.play(BEEP_SHORT,PL_BEEP_CANINT)
+		#endif
+		device_setting_init=OK
+	end if
+
+end function
+
+'------------------------------------------------------------------------------
+public sub device_process_esc_seq(byref s as string)
+	dim pos,x as byte
+	
+	'process escape sequences
+	pos=instr(1,s,"\x5Cx",1) 'we are searching for "\x"
+	while pos>0
+		x=val("&h"+mid(s,pos+2,2))
+		s=mid(s,1,pos-1)+chr(x)+mid(s,pos+4,255)
+		pos=instr(1,s,"\x5C",1)
+	wend
+end sub
+
+'------------------------------------------------------------------------------
+public sub set_net_ip(interface as pl_sock_interfaces)
+'Correctly sets new IP for use (from the IP setting)
+	dim s as string(16)
+	dim x,f as byte
+
+	#if NET_AVAILABLE
+		if interface=PL_SOCK_INTERFACE_NET then
+			s=stg_get("IP",0)
+			#if SUPPORTS_DS
+				declare_ip_set(PL_SOCK_INTERFACE_NET)
+			#endif
+		end if
+	#endif
+	
+	#if WLN_AVAILABLE
+		if interface=PL_SOCK_INTERFACE_WLN then
+			s=stg_get("WI",0)
+			#if SUPPORTS_DS
+				declare_ip_set(PL_SOCK_INTERFACE_WLN)
+			#endif
+		end if	
+	#endif
+	
+	s=ddval(s)
+	
+	'first number can't be 0 or >223
+	x=asc(left(s,1))
+	if x=0 or x>223 then
+		s=right(s,3)
+		s=chr(1)+s
+	end if
+	
+	'last number can't be 0 or 255
+	x=asc(right(s,1))
+	if x=0 or x=255 then
+		s=left(s,3)+chr(1)
+	end if
+	
+	'shut all sockets!
+	sock.inconenabledmaster=NO 
+	for f=0 to sock.numofsock-1
+		sock.num=f
+		sock.discard
+		while sock.statesimple<>PL_SSTS_CLOSED
+		wend
+	next f
+	
+	'change the IP
+	#if NET_AVAILABLE
+		if interface=PL_SOCK_INTERFACE_NET then
+			net.ip=ddstr(s)
+			net.netmask=stg_get("NM",0)
+			net.gatewayip=stg_get("GI",0)
+			sock.inconenabledmaster=YES 
+		end if
+	#endif
+	
+	#if WLN_AVAILABLE	
+		if interface=PL_SOCK_INTERFACE_WLN then
+			wln.ip=ddstr(s)
+			wln.netmask=stg_get("WN",0)
+			wln.gatewayip=stg_get("WG",0)
+			sock.inconenabledmaster=YES
+		end if
+	#endif
+
+end sub
+
+'------------------------------------------------------------------------------
+#if USE_DNS
+sub callback_dns_failure(status as en_dns_status_codes)
+	server_ip_obtain=YES
+	sock.num=sock_dns
+	sock.close()
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_dns_answer_acquired(return_type as en_dns_return_type, byref return_string as string)
+	dim s as string(32)
+	
+	if server_ip_obtain=NO and return_type=EN_DNS_RET_IP then
+		if conn_p_modified=NO then
+			s=ddstr(return_string)
+			stg_set("TI",0,s)
+		else
+			server_ip_temp=ddstr(return_string)
+		end if
+		server_ip_obtain=YES
+	end if
+	
+	dns_disconnect()
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_dns_ok()
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_dns_pre_buffrq(num_of_pages_required as byte)
+end sub
+
+'------------------------------------------------------------------------------
+sub callback_dns_buff_released()
+end sub
+
+#endif
+
+'------------------------------------------------------------------------------
+public function device_settings_sg(setting_name as string(5),index as byte, byref setting_val as string, byref stg_num as byte, rw as en_device_rdwr) as en_stg_status_codes
+	dim w1, w2, w3 as word
+	dim b1, b2, b3, b4 as byte
+	dim s1, s2 as string(64)
+	
+	dim setting_result as en_stg_status_codes
+	
+	device_settings_sg=EN_STG_STATUS_OK
+	
+	if rw=DEVICE_GET then
+		select case setting_name
+		case "TD":
+			rtc.getdata(w1,w2,b1)
+			b2=val(stg_get("TZ",0))
+			b3=val(stg_get("DS",0))
+			td_gmt_to_local(w1,w2,b2,b3)
+			td_to_str(setting_val,w1,w2,b1,0)
+			td_str_date_time_reformat(setting_val,TD_STR_ADD_FORMATTING,TD_DATE_FORMAT_YYYYMMDD)
+			setting_val=left(setting_val,10)
+		case "TT":
+			rtc.getdata(w1,w2,b1)
+			b2=val(stg_get("TZ",0))
+			b3=val(stg_get("DS",0))
+			td_gmt_to_local(w1,w2,b2,b3)
+			td_to_str(setting_val,w1,w2,b1,0)
+			setting_val=mid(setting_val,9,6)
+			td_str_time_reformat(setting_val,TD_STR_ADD_FORMATTING)
+		case else:
+			b1=instr(1,setting_name,"@",1)
+			if b1>0 then
+				index=val(right(setting_name,len(setting_name)-b1))
+				setting_name=left(setting_name,b1-1)
+			end if
+			setting_result=stg_sg(setting_name,index,setting_val,EN_STG_GET)
+			if setting_result=EN_STG_STATUS_OK then
+				if chr(stg_stype_get(setting_name))="D" then
+					b1=0
+					do 
+						b2=instr(b1+1,setting_val,chr(46),1)
+						if b2>0 then
+							s1=mid(setting_val,b1+1,b2-b1-1)
+						else
+							s1=right(setting_val,len(setting_val)-b1)
+						end if
+						while len(s1)<3
+							s1="0"+s1
+						wend
+						s2=s2+s1+chr(46)
+						b1=b2
+					loop while b1<>0
+					setting_val=left(s2,len(s2)-1)
+				end if	
+			end if
+			device_settings_sg=setting_result		
+		
+		end select
+	else
+		select case setting_name
+		case "TD":
+			b2=val(stg_get("TZ",0))
+			b3=val(stg_get("DS",0))
+			
+			rtc.getdata(w1,w2,b1)
+			td_gmt_to_local(w1,w2,b2,b3)
+			td_str_date_time_reformat(setting_val,TD_STR_REMOVE_FORMATTING,TD_DATE_FORMAT_YYYYMMDD)
+			td_from_str(setting_val,w1,w3,b4,0)
+			td_local_to_gmt(w1,w2,b2,b3)
+			rtc.setdata(w1,w2,b1)
+		case "TT":
+			b2=val(stg_get("TZ",0))
+			b3=val(stg_get("DS",0))
+			
+			rtc.getdata(w1,w2,b1)
+			td_gmt_to_local(w1,w2,b2,b3)
+			td_str_time_reformat(setting_val,TD_STR_REMOVE_FORMATTING)
+			setting_val="20010101"+setting_val
+			td_from_str(setting_val,w3,w2,b1,0)
+			td_local_to_gmt(w1,w2,b2,b3)
+			rtc.setdata(w1,w2,b1)
+		case else:
+			b1=instr(1,setting_name,"@",1)
+			if b1>0 then
+				index=val(right(setting_name,len(setting_name)-b1))
+				setting_name=left(setting_name,b1-1)
+			end if		
+			device_settings_sg=stg_sg(setting_name,index,setting_val,EN_STG_SET)
+		end select	
+	end if
+	
+end function
+
+
+#if SUPPORTS_DISPLAY
+'------------------------------------------------------------------------------
+sub lcd_display_button(F1_ADD as word,
+	F2_ADD as word,
+	F3_ADD as word,
+	F4_ADD as word, 			'F#_ADD are the offset address of the icon in the BMP file.
+	byref on_off as string(4),  'on_off string consist with 4 characters (0 or 1), which indicates if the icon is highlighted.  For example if on_off="0100", this means, only icon F2 are highlighted, rest are normal.
+	repaint as no_yes,			'If repaint=yes, then all 4 icons are refreshed, else only the those icons that are previously or now highlighted, are being refreshed.
+	revert as no_yes			'If revert=yes, then switch lcd forecolor and backcolor, meaning those icons which were normal, now are highlighted, and vice versa.
+	)
+'This function prints 4 stored icon images on the LCD, 
+	dim F1_on,F2_on,F3_on,F4_on as no_yes
+	dim x, y, w as word
+	
+	x=18
+	y=SETTING_VAL_Y+SETTING_VAL_H
+	w=83
+	if mid(on_off,1,1)="0" then F1_on=NO else F1_on=YES 
+	if mid(on_off,2,1)="0" then F2_on=NO else F2_on=YES 
+	if mid(on_off,3,1)="0" then F3_on=NO else F3_on=YES 
+	if mid(on_off,4,1)="0" then F4_on=NO else F4_on=YES 
+	
+	if repaint=YES then 
+	romfile.open(ICON_FILE)	
+
+		lcd.forecolor=LCD_FORECOLOR
+		lcd.backcolor=LCD_BACKCOLOR
+	LCD_LOCK	
+		lcd_clear(1,y-1,lcd.width-1,33)
+		lcd.bmp(romfile.offset,x-13,y,F1_ADD,0,40,31)
+		lcd.bmp(romfile.offset,x+w,y,F2_ADD,0,40,31)
+		lcd.bmp(romfile.offset,x+w*2,y,F3_ADD,0,40,31)
+		lcd.bmp(romfile.offset,x+w*3+10,y,F4_ADD,0,40,31)
+	LCD_UNLOCK
+
+	end if
+	romfile.open(ICON_FILE)
+	if revert=NO then
+		lcd.forecolor=LCD_BACKCOLOR
+		lcd.backcolor=LCD_FORECOLOR
+	else
+		lcd.forecolor=LCD_FORECOLOR
+		lcd.backcolor=LCD_BACKCOLOR
+	end if
+
+	LCD_LOCK
+	if F1_on=yes then lcd.bmp(romfile.offset,x-13,y,F1_ADD,0,40,31)
+	if F2_on=yes then lcd.bmp(romfile.offset,x+w,y,F2_ADD,0,40,31)
+	if F3_on=yes then lcd.bmp(romfile.offset,x+w*2,y,F3_ADD,0,40,31)
+	if F4_on=yes then lcd.bmp(romfile.offset,x+w*3+10,y,F4_ADD,0,40,31)
+	LCD_UNLOCK
+	lcd.forecolor=LCD_FORECOLOR
+	lcd.backcolor=LCD_BACKCOLOR
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_ui_menu_command(s as string)
+
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_move_cursor(menu_item as menu_display_item,desc_file as string(30))
+	dim setting_val as string
+	dim color1, color2 as word
+	dim i,j as word
+	dim sname as string(8)
+	dim item_data as string
+	dim setting_type as string(1)
+	dim b as byte
+	
+	color1=lcd.forecolor
+	color2=lcd.backcolor
+	romfile.open(desc_file)
+	romfile.pointer=menu_item.display_item_data_addr
+	item_data=romfile.getdata(menu_item.display_item_data_len)
+	i=instr(1,item_data,chr(COMMA),2)
+	j=instr(1,item_data,chr(COMMA),3)	
+	sname=mid(item_data,i+1,j-i-1)
+	if left(item_data,1)<>"S" or sname="" or sname="PW" or sname="WP" then
+		lcd.forecolor=BG_BLUE
+		lcd.fill(INPUT_BOX_X,INPUT_BOX_Y,INPUT_BOX_W,INPUT_BOX_H)
+	else
+'check if cursor moved to a list item, if so, display the item description in the menu discription file
+		i=instr(1,item_data,chr(COMMA),1)
+		j=instr(1,item_data,chr(COMMA),2)
+		setting_type=mid(item_data,i+1,j-i-1)
+		select case setting_type
+		case "L":
+			j=instr(1,item_data,chr(COMMA),3)
+			item_data=mid(item_data,j+1,len(item_data)-j)
+			i=instr(1,item_data,"-",1)
+				
+			if device_settings_sg(sname,0,setting_val,b,DEVICE_GET)=EN_STG_STATUS_OK and setting_val<>"" then
+				if setting_val<>left(item_data,i-1) then
+					setting_val=";"+setting_val+"-"
+					i=instr(1,item_data,setting_val,1)+len(setting_val)-1
+				end if
+				j=instr(i,item_data,";",1)
+				setting_val=mid(item_data,i+1,j-i-1)
+			end if
+		case "I":
+			device_settings_sg(sname,0,setting_val,b,DEVICE_GET)
+		case "T":
+		end select
+		if setting_val <> "" then
+			romfile.open(LCD_STD_FONT)
+			lcd.setfont(romfile.offset)
+			lcd.forecolor=LCD_DISABLE_FORECOLOR
+			lcd.backcolor=BG_BLUE
+			lcd_print_msg(setting_val,SETTING_VAL_X+SCROLL_CURSOR_WIDTH,SETTING_VAL_Y,SETTING_VAL_W-SETTING_VAL_X-SCROLL_CURSOR_WIDTH,SETTING_VAL_H,PL_LCD_TEXT_ALIGNMENT_MIDDLE_LEFT,no)
+		else
+			lcd.forecolor=BG_BLUE
+			lcd.fill(INPUT_BOX_X,INPUT_BOX_Y,INPUT_BOX_W,INPUT_BOX_H)
+		end if
+	end if
+	lcd.forecolor=color1
+	lcd.backcolor=color2	
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_menu_pre(
+	x_coord as word,	'x coordination
+	y_coord as word,	'y coordination
+	width as word,		'width of the menu in pixel
+	height as word,		'height of the menu in pixel
+	byref menu_states as string(MENU_MAX_LVL),	'allows user to start up the menu inside of selected sub-folders instead of root.  example: if menu_state="23" then the menu will started at 2nd folder of menu lvl 1, 3rd folder of menu lvl 2. if menu_state="" then menu started at root.
+	byref menu_descriptor_file as string(20),		'the descriptor file
+	access_level as byte, 		'access level of the user, only the menu item that is small or equal to access_level will show.
+	timeout as byte				'if no respond from the keypad within the time defined by "timeout", exit the menu and return to the previous screen. If timeout=0, no time out applies
+	)
+
+	lcd_display_button(BMP_CANCEL_XOFFSET,BMP_UP_XOFFSET,BMP_DOWN_XOFFSET,BMP_ENTER_XOFFSET,"0000",yes,no)
+	lcd.forecolor=BG_BLUE
+	lcd.fill(INPUT_BOX_X,INPUT_BOX_Y,INPUT_BOX_W,INPUT_BOX_H)
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_menu_post(
+	x_coord as word,	'x coordination
+	y_coord as word,	'y coordination
+	width as word,		'width of the menu in pixel
+	height as word,		'height of the menu in pixel
+	byref menu_states as string(MENU_MAX_LVL),	'allows user to start up the menu inside of selected sub-folders instead of root.  example: if menu_state="23" then the menu will started at 2nd folder of menu lvl 1, 3rd folder of menu lvl 2. if menu_state="" then menu started at root.
+	byref menu_descriptor_file as string(20),		'the descriptor file
+	access_level as byte, 		'access level of the user, only the menu item that is small or equal to access_level will show.
+	timeout as byte				'if no respond from the keypad within the time defined by "timeout", exit the menu and return to the previous screen. If timeout=0, no time out applies
+	)
+	lcd_clear(x_coord, y_coord-UM_VER_SPACING/2-SCROLL_BORDER-1, width-SCROLL_BAR_WIDTH-SCROLL_BORDER*2, height+UM_VER_SPACING+SCROLL_BORDER)
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_input_box_pre(
+	byref mask_str as string(IB_MAX_LEN),	'uneditable part of the input string
+	byref edit_str as string(IB_MAX_LEN),	'input string
+	char_range as input_box_char_ranges,	'the input range. INPUT_BOX_CHAR_RANGE_09 only allows numeric input, INPUT_BOX_CHAR_RANGE_AZ allows alphabetic, INPUT_BOX_CHAR_RANGE_09AZ allows both numeric and alphabetic input.
+	secret_mode as no_yes,			'if secret_mode=yes, all editable part of the input string will be display on the LCD as "*", this are mostly used for password.
+	insert_mode as no_yes,			'if insert_mode=yes, the new character is insert before the cursor, if insert_mode=no, the character replaces the character at the cursor position.
+	byref initial_pos as byte,			'initial cursor position
+	timeout as byte,				'if no keypad activity for the amount of time defined by timeout, input box is automatically closed and return to previous screen.
+	input_length as byte			'the maximum number of characters
+)
+
+	lcd_display_button(BMP_CANCEL_XOFFSET,BMP_NUM_XOFFSET,BMP_LEFT_XOFFSET,BMP_ENTER_XOFFSET,"0000",yes,no)
+	lcd.forecolor=LCD_INPUTBOX_BACKCOLOR
+	lcd.fill(INPUT_BOX_X,INPUT_BOX_Y,INPUT_BOX_W,INPUT_BOX_H)
+	lcd.forecolor=LCD_INPUTBOX_FORECOLOR
+	lcd.backcolor=LCD_INPUTBOX_BACKCOLOR
+	input_box_mode=INPUT_BOX_NUMERIC
+	ib_init=YES
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_input_box_post(
+	byref mask_str as string(IB_MAX_LEN),	'uneditable part of the input string
+	byref edit_str as string(IB_MAX_LEN),	'input string
+	char_range as input_box_char_ranges,	'the input range. INPUT_BOX_CHAR_RANGE_09 only allows numeric input, INPUT_BOX_CHAR_RANGE_AZ allows alphabetic, INPUT_BOX_CHAR_RANGE_09AZ allows both numeric and alphabetic input.
+	secret_mode as no_yes,			'if secret_mode=yes, all editable part of the input string will be display on the LCD as "*", this are mostly used for password.
+	insert_mode as no_yes,			'if insert_mode=yes, the new character is insert before the cursor, if insert_mode=no, the character replaces the character at the cursor position.
+	byref initial_pos as byte,			'initial cursor position
+	timeout as byte,				'if no keypad activity for the amount of time defined by timeout, input box is automatically closed and return to previous screen.
+	input_length as byte			'the maximum number of characters
+)
+
+	lcd.forecolor=LCD_FORECOLOR
+	lcd.backcolor=LCD_BACKCOLOR
+
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_list_box_pre(
+	x_coord as word,		'x coordination
+	y_coord as word,		'y coordination
+	list_width as word,		'list box width
+	list_height as word,	'list box height
+	byref listbox_data as string,		'values and display strings of all list box items
+	byref listbox_state as string(10),	'the value of selected list box item 
+	timeout as byte						'if no respond from the keypad within the time defined by "timeout", exit the list box and return to the previous screen. If timeout=0, no time out applies
+	)
+	
+	lcd_display_button(BMP_CANCEL_XOFFSET,BMP_UP_XOFFSET,BMP_DOWN_XOFFSET,BMP_ENTER_XOFFSET,"0000",yes,no)
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_list_box_post(
+	x_coord as word,		'x coordination
+	y_coord as word,		'y coordination
+	list_width as word,		'list box width
+	list_height as word,	'list box height
+	byref listbox_data as string,		'values and display strings of all list box items
+	byref listbox_state as string(10),	'the value of selected list box item 
+	byref disable_print as no_yes,
+	timeout as byte						'if no respond from the keypad within the time defined by "timeout", exit the list box and return to the previous screen. If timeout=0, no time out applies
+	)
+	
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_msg_box_pre(
+	byref msg as string(160), 			'message to be displayed in the Message Box
+	x as word, 							'x coordination
+	y as word, 							'y coordination
+	w as word, 							'width of the msgbox
+	h as word, 							'height of the msgbox
+	align as pl_lcd_text_alignment, 	'alignment of the text in the msgbox
+	byref keycode_str as string(20),	'this string contains the characters which ASCII is correspond to the keycode of keys on the keypad that msgbox responds to 
+	bolder as no_yes, 					'if the msgbox is wrap with a visible bolder line
+	timeout as byte						'if no respond from the keypad within the time defined by "timeout", exit the msgbox and return to the previous screen. If timeout=0, no time out applies
+	)
+	
+	dim color as word
+
+	if msg=EXIT_MENU then
+		color=lcd.forecolor
+		lcd.forecolor=BG_BLUE
+		lcd.fill(INPUT_BOX_X,INPUT_BOX_Y,INPUT_BOX_W,INPUT_BOX_H)
+		lcd.forecolor=color
+	end if
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_msg_box_post(
+	byref msg as string(60), 			'message to be displayed in the Message Box
+	x as word, 							'x coordination
+	y as word, 							'y coordination
+	w as word, 							'width of the msgbox
+	h as word, 							'height of the msgbox
+	align as pl_lcd_text_alignment, 	'alignment of the text in the msgbox
+	byref keycode_str as string(20),	'this string contains the characters which ASCII is correspond to the keycode of keys on the keypad that msgbox responds to 
+	bolder as no_yes, 					'if the msgbox is wrap with a visible bolder line
+	timeout as byte						'if no respond from the keypad within the time defined by "timeout", exit the msgbox and return to the previous screen. If timeout=0, no time out applies
+	)
+	lcd_clear(MSG_BOX_X,MSG_BOX_Y,MSG_BOX_W,MSG_BOX_H)
+	lcd_clear(0,SETTING_VAL_Y+SETTING_VAL_H+2,lcd.width,lcd.height-SETTING_VAL_Y-SETTING_VAL_H-2)
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_ib_timer_event(byref current_state as input_box_key_actions,byref key_asc as byte,byref insert_mode as no_yes)
+	if ib_chr_timer=0 then exit sub
+	ib_chr_timer=ib_chr_timer-1
+	if ib_chr_timer=0 then
+		chr_init=YES
+		key_asc=255
+		current_state=INPUT_BOX_POS_FORWARD
+	end if
+end sub
+
+'------------------------------------------------------------------------------
+sub device_ib_interrupt()
+	
+end sub
+
+'------------------------------------------------------------------------------
+sub device_lb_interrupt()
+end sub
+
+'------------------------------------------------------------------------------
+sub device_mb_interrupt()
+end sub
+
+'------------------------------------------------------------------------------
+sub device_menu_interrupt()
+end sub
+
+'------------------------------------------------------------------------------
+public sub lcd_clear(x as word, y as word, width as word, height as word)
+	dim color as word
+	color=lcd.forecolor
+	lcd.forecolor=lcd.backcolor
+	lcd.fill(x,y,width,height)
+	lcd.forecolor=color
+end sub
+
+'------------------------------------------------------------------------------
+public sub lcd_print_msg(byref msg as string,x as word, y as word, w as word, h as word, al as pl_lcd_text_alignment, bolder as no_yes)
+'This is a popup msgbox, it prints a message on the LCD.
+	lcd.textverticalspacing=MSB_VER_SPACING
+	lcd.texthorizontalspacing=MSB_HOR_SPACING
+	lcd.textalignment=al
+	lcd.printaligned(msg,x,y,w,h)
+	lcd.linewidth=2
+	if bolder=YES then lcd.rectangle(x,y,x+w,y+h)
+end sub
+
+'------------------------------------------------------------------------------
+public function device_mb_get_key(mk as en_mb_keys) as string
+	select case mk
+	case MBK_COMMAND_CANCEL: 	device_mb_get_key=chr(KEY_F4)
+	case MBK_YES: 				device_mb_get_key=chr(KEY_F4)
+	case MBK_OK: 				device_mb_get_key=chr(KEY_F4)
+	case MBK_COMMAND_CONFIRM: 	device_mb_get_key=chr(KEY_F1)
+	case MBK_NO: 				device_mb_get_key=chr(KEY_F1)
+	case MBK_F1:				device_mb_get_key=chr(KEY_F1)
+	case MBK_F2:				device_mb_get_key=chr(KEY_F2)
+	case MBK_F4:				device_mb_get_key=chr(KEY_F4)
+	end select
+end function
+
+'------------------------------------------------------------------------------
+public sub device_menu_key_proc(key_event as pl_kp_event_codes, key_code as byte, byref current_state as menu_key_actions)
+	select case key_event
+	case PL_KP_EVENT_PRESSED:
+		beep.play(BEEP_VERY_SHORT,PL_PAT_CANINT)
+		select case key_code
+		case KEY_F1: 'F1
+			current_state=MENU_KEY_OUT
+		case KEY_F2: 'F2
+			current_state=MENU_KEY_UP
+		case KEY_F3: 'F3
+			current_state=MENU_KEY_DOWN
+		case KEY_F4: 'F4
+			current_state=MENU_KEY_IN
+		case else 
+			current_state=255
+		end select
+	case PL_KP_EVENT_RELEASED:
+	case else
+	end select
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_ib_key_proc(key_event as pl_kp_event_codes, key_code as byte, byref current_state as input_box_key_actions, byref key_asc as byte, byref insert_mode as no_yes)
+	select case key_event
+	case PL_KP_EVENT_PRESSED:
+
+		beep.play(BEEP_VERY_SHORT,PL_PAT_CANINT)
+
+		select case key_code
+		case KEY_F1: 'F1
+			current_state=INPUT_BOX_CANCEL
+		case KEY_F2: 'F2
+			current_state=INPUT_BOX_CHAR_FORWARD
+		case KEY_F3: 'F3
+			current_state=INPUT_BOX_POS_FORWARD
+		case KEY_F4: 'F4
+			current_state=INPUT_BOX_CONFIRM
+		case else 
+			current_state=INPUT_BOX_NONE
+		end select
+	case PL_KP_EVENT_RELEASED:
+		current_state=INPUT_BOX_NONE
+	end select
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_lb_key_proc(key_event as pl_kp_event_codes, key_code as byte, byref current_state as list_box_key_action)
+
+	select case key_event
+	case PL_KP_EVENT_PRESSED:
+		beep.play(BEEP_VERY_SHORT,PL_PAT_CANINT)
+
+		select case key_code
+		case KEY_F1: 'F1,C
+			
+			current_state=LIST_BOX_CANCEL
+		case KEY_F2: 'F2
+			
+			current_state=LIST_BOX_CURSOR_UP
+		case KEY_F3: 'F3
+			
+			current_state=LIST_BOX_CURSOR_DOWN
+		case KEY_F4: 'F4,E
+			
+			current_state=LIST_BOX_CONFIRM
+		case else
+			current_state=255
+		end select
+	case PL_KP_EVENT_RELEASED:
+		current_state=255
+	case else
+		current_state=255
+	end select
+end sub
+
+'------------------------------------------------------------------------------
+public sub device_mb_key_proc(key_event as pl_kp_event_codes, key_code as byte)
+
+end sub
+
+'------------------------------------------------------------------------------
+public sub set_stg_modified()
+
+end sub
+
+'------------------------------------------------------------------------------
+sub reset_keypad()
+
+end sub
+#endif

@@ -1,0 +1,568 @@
+include "global.tbh"
+
+dim flag_update as boolean
+dim flag_need_init as boolean
+
+dim tz, ds as string(17)
+
+'	APB variables difine
+dim ac_apb_enable as boolean
+dim ac_apb_timeout as byte
+dim ac_apb_to_permission as boolean
+dim ac_apb_type as EN_AC_APB_TYPE
+dim ac_apb_to_type as byte
+
+dim tbl_hash(10000) as byte
+dim tbl_hash_size as word
+
+sub ac_init()
+	
+	dim i as word
+	dim j as byte
+
+	ac_apb_enable = val(stg_get("AE",0))
+	ac_apb_timeout = val(stg_get("AT",0))
+	ac_apb_to_permission = val(stg_get("AD",0))
+	ac_apb_type = val(stg_get("AY",0))
+	ac_apb_to_type = val(stg_get("AI",0))
+
+	j = 0
+	if tbl_select("cards", "cards") = EN_TBL_STATUS_OK then
+		if tbl_get_num_records(tbl_hash_size, YES) = EN_TBL_STATUS_OK then
+			for i = 1 to tbl_hash_size
+				if tbl_is_record_deleted(i) = NO then
+					if tbl_record_read_active(i) = EN_TBL_STATUS_OK then
+					
+						' Copy data from table to array
+						tbl_hash(i) = tbl_field_get("hash")
+					else
+						tbl_hash(i) = 0
+					end if
+				else
+					tbl_hash(i) = 0
+				end if
+				
+				if j > 20 then
+					j = 0
+					agg_keep_alive()
+				else j = j + 1
+				end if
+			next i
+		end if
+	end if
+
+end sub
+
+function ac_get_name_hash(byref card_id as string(16)) as byte
+
+	dim i as byte
+	dim res as byte	
+	
+	res = 0
+	for i = 1 to len(card_id)
+		res = res + asc(mid(card_id, i, 1))
+	next i
+
+	ac_get_name_hash = res
+	
+end function
+
+function ac_check_active_period(req_year as byte, req_month as byte, req_day as byte, req_hour as byte, req_min as byte,
+								from_year as byte, from_month as byte, from_day as byte, from_hour as byte, from_min as byte,
+								to_year as byte, to_month as byte, to_day as byte, to_hour as byte, to_min as byte) as boolean
+	
+	ac_check_active_period = false
+	
+	' Check FROM
+	if req_year < from_year then exit function
+	if req_year = from_year then
+		if req_month < from_month then exit function
+		if req_month = from_month then
+			if req_day < from_day then exit function
+			if req_day = from_day then
+				if req_hour < from_hour then exit function
+				if req_hour = from_hour then
+					if req_min < from_min then exit function
+				end if
+			end if
+		end if
+	end if
+
+	' Check TO
+	if to_year <> 00 or to_month <> 01 or to_day > 02 then
+		if req_year > to_year then exit function
+		if req_year = to_year then
+			if req_month > to_month then exit function
+			if req_month = to_month then
+				if req_day > to_day then exit function
+				if req_day = to_day then
+					if req_hour > to_hour then exit function
+					if req_hour = to_hour then
+						if req_min > to_min then exit function
+					end if
+				end if
+			end if
+		end if
+	end if
+
+	ac_check_active_period = true
+
+end function
+
+' Check CardID and Reader for access
+function ac_check_id(byref card_id as string(16), reader as byte, relayChannel as byte, byref name as string(20)) as EN_AC_RESULT
+
+	dim card as string
+	dim card_from_year as byte
+	dim card_from_month as byte
+	dim card_from_day as byte
+	dim card_from_hour as byte
+	dim card_from_min as byte
+	dim card_to_year as byte
+	dim card_to_month as byte
+	dim card_to_day as byte
+	dim card_to_hour as byte
+	dim card_to_min as byte
+	dim card_super as word
+	dim card_acl as word
+	dim j as word
+	dim card_flag as boolean
+	dim acl_res as string(16)
+	dim hash as byte
+
+	dim req_year as byte
+	dim req_month as byte
+	dim req_day as byte
+	dim req_hour as byte
+	dim req_min as byte
+	dim time_req as string(17)
+	dim dcount,mcount as word
+	dim sec as byte
+	
+	dim result as EN_AC_RESULT
+
+	result = EN_AR_UNKNOWN
+
+	acl_res = ""
+
+	if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and relay_block_status = EN_BS_BLOCK_NOT_ACTIVE then
+		' Get time for request access
+		rtc.getdata(dcount,mcount,sec)
+		td_gmt_to_local(dcount,mcount,tz,ds)
+		td_to_str(time_req,dcount,mcount,sec,0)		' Check date and time in LOCAL time zone
+		req_year = val(Mid(time_req, 3, 2))
+		req_month = val(Mid(time_req, 5, 2))
+		req_day = val(Mid(time_req, 7, 2))
+		req_hour = val(Mid(time_req, 9, 2))
+		req_min = val(Mid(time_req, 11, 2))
+		
+		card_flag = false
+
+		' Find CARD_ID
+		if tbl_select_for_read("cards", "cards") = EN_TBL_STATUS_OK then
+
+			hash = ac_get_name_hash(card_id)
+			for j = 1 to tbl_hash_size
+
+				if tbl_hash(j) = hash then
+					
+					if tbl_record_read_active(j) = EN_TBL_STATUS_OK then
+
+						' get data for finded card entry
+						card = tbl_field_get("id")
+						if card = card_id then
+							name = tbl_field_get("name")
+							card_from_year = tbl_field_get("actYear")
+							card_from_month = tbl_field_get("actMonth")
+							card_from_day = tbl_field_get("actDay")
+							card_from_hour = tbl_field_get("actHour")
+							card_from_min = tbl_field_get("actMin")
+							card_to_year = tbl_field_get("deactYear")
+							card_to_month = tbl_field_get("deactMonth")
+							card_to_day = tbl_field_get("deactDay")
+							card_to_hour = tbl_field_get("deactHour")
+							card_to_min = tbl_field_get("deactMin")
+							card_super = tbl_field_get("supervisor")
+							card_acl = tbl_field_get("acl")
+							
+							' Check active period for card
+							if ac_check_active_period(req_year, req_month, req_day, req_hour, req_min,
+														card_from_year, card_from_month, card_from_day, card_from_hour, card_from_min,
+														card_to_year, card_to_month, card_to_day, card_to_hour, card_to_min) then
+
+								' Card finded!
+								card_flag = true
+								
+								' Check ACL for card
+								select case ac_check_acl(card_acl, reader, time_req, card_id, acl_res)
+								case EN_AR_UNKNOWN:
+								case EN_AR_GRANTED:
+									if result = EN_AR_UNKNOWN then
+										result = EN_AR_GRANTED
+									end if
+
+								case EN_AR_RESTRICTED:
+									result = EN_AR_RESTRICTED
+								end select
+
+								tbl_select_for_read("cards", "cards")
+
+							end if
+						end if
+					end if
+				end if
+			next j
+
+		end if
+
+		if result = EN_AR_GRANTED then
+
+			' Check APB functionality
+			if ac_apb_enable then
+				' APB enabled
+				' APB request
+				
+				event_apb(EN_EE_REQUEST, card_id, reader, time_req)
+				
+				event_add(EN_ES_ACL, EN_EE_APBREQUEST, acl_res, card_id)
+
+				ac_check_id = EN_AR_APB
+
+			else
+			
+				event_add(EN_ES_ACL, EN_EE_GRANTED, acl_res, card_id)
+				
+				relay_open_channel(relayChannel)
+				
+				ac_check_id = EN_AR_GRANTED
+
+			end if
+
+
+		else
+		
+			ac_check_id = EN_AR_RESTRICTED
+				
+			if card_flag = false then
+				event_add(EN_ES_ACL, EN_EE_DENY, "ID not found", card_id)
+			else
+				if acl_res = "" then acl_res = "No policy"
+				event_add(EN_ES_ACL, EN_EE_DENY, acl_res, card_id)
+			end if
+
+		end if
+	else
+		ac_check_id = EN_AR_RESTRICTED
+	end if
+
+end function
+
+function ac_check_acl(acl_index as word, reader as byte, byref time as string(17), byref card_id as string(16), byref acl_name as string(16)) as EN_AC_RESULT
+	dim i as word
+	dim f_acl as word
+	dim f_reader as byte
+	dim f_timezone as string(16)
+	dim f_policy as byte
+	dim f_confirm as byte
+	dim result as EN_AC_RESULT
+	
+	result = EN_AR_UNKNOWN
+
+	' Finding ACL for CardID and ReaderID
+	i = 1
+
+	if tbl_select_for_read("acl", "acl") = EN_TBL_STATUS_OK then
+
+		while tbl_record_find(EN_TBL_RECORD_ACTIVE, str(acl_index), "index", i, EN_TBL_SEARCH_DOWN, PL_FD_FIND_EQUAL) = EN_TBL_STATUS_OK
+
+			if tbl_record_read_active(i) = EN_TBL_STATUS_OK then
+
+				' Check Reader in current record ACL
+				if tbl_field_get("reader") = reader then
+
+					' Finded ACL for CardID & ReaderID
+					acl_name = tbl_field_get("acl")
+					f_reader = tbl_field_get("reader")
+					f_timezone = tbl_field_get("timezone")
+					f_policy = tbl_field_get("policy")
+					f_confirm = tbl_field_get("confirm")
+					
+					#if DEV_DEBUG_PRINT
+'						dev_debugprint("Check ACL: " + acl + ", FIND Card id: " + f_acl + ", reader: " + str(f_reader) + ", timezone: " 
+'										+ f_timezone + ", policy: " + str(f_policy) + ", confirm: " + str(f_confirm))
+					#endif
+					
+					' check time zones
+					if ac_check_timezone(f_timezone, time) then
+						if f_policy = 1 then 
+							result = EN_AR_RESTRICTED
+						else
+							if f_policy = 0 and result = EN_AR_UNKNOWN then
+								result = EN_AR_GRANTED
+							end if
+						end if
+					end if
+
+					tbl_select_for_read("acl", "acl")
+
+				end if
+			else 
+				i = -1
+			end if
+			
+			i = i + 1
+
+		wend
+
+	end if
+	
+	select case result
+	case EN_AR_UNKNOWN:
+		ac_check_acl = EN_AR_UNKNOWN
+		
+	case EN_AR_GRANTED:
+		ac_check_acl = EN_AR_GRANTED
+		
+	case EN_AR_RESTRICTED:
+		ac_check_acl = EN_AR_RESTRICTED
+		
+	end select
+	
+end function
+
+function ac_check_timezone(byref timezone as string(16), byref time as string(17)) as boolean
+	dim i as word
+	dim f_fromtime as string(17)
+	dim f_totime as string(17)
+	dim f_fromyear as string(4)
+	dim f_toyear as string(4)
+	dim f_months as word
+	dim f_days as long
+	dim f_weekdays as byte
+	dim day_c, min_c, msec as word
+	dim sec as byte
+	dim local_time as string(17)
+	dim dss as word
+	dim wd as byte
+	
+	ac_check_timezone = false
+	
+	' Finding timezone in TZONES table
+	i = 1
+
+	if tbl_select_for_read("tzones", "tzones") = EN_TBL_STATUS_OK then
+
+		while tbl_record_find(EN_TBL_RECORD_ACTIVE, timezone, "name", i, EN_TBL_SEARCH_DOWN, PL_FD_FIND_EQUAL) = EN_TBL_STATUS_OK
+
+			if tbl_record_read_active(i) = EN_TBL_STATUS_OK then
+
+				' timezone finded
+				f_fromtime = tbl_field_get("fromTime")
+				f_totime = tbl_field_get("toTime")
+				f_fromyear = tbl_field_get("fromYear")
+				f_toyear = tbl_field_get("toYear")
+				f_months = tbl_field_get("months")
+				f_days = tbl_field_get("monthDays")
+				f_weekdays = tbl_field_get("weekDays")
+
+				td_from_str(f_fromtime, day_c, min_c, sec, msec)
+				td_gmt_to_local(day_c, min_c, tz, ds)
+				td_to_str(f_fromtime, day_c, min_c, sec, msec)
+
+				td_from_str(f_totime, day_c, min_c, sec, msec)
+				td_gmt_to_local(day_c, min_c, tz, ds)
+				td_to_str(f_totime, day_c, min_c, sec, msec)
+
+				' Check time bounds
+				if Left(f_fromtime, 4) = "2000" or ( Left(f_fromtime, 4) <> "2000" and Right(time, 9) >= Right(f_fromtime, 9)) then			' fromTime passed
+					if Left(f_totime, 4) = "2000" or ( Left(f_totime, 4) <> "2000" and Right(time, 9) <= Right(f_totime, 9)) then				' toTime passed
+						if f_fromyear = "2000" or ( f_fromyear <> "2000" and Left(time, 4) >= Right(f_fromyear, 9)) then	' fromYear passed
+							if f_toyear = "2000" or ( f_toyear <> "2000" and Left(time, 4) <= Right(f_toyear, 9)) then		' toYear passed
+								if f_months = 0 or ac_test_bits(mid(time, 5, 2), f_months) then						' Months passed
+									if f_days = 0 or ac_test_bits(mid(time, 7, 2), f_days) then						' Days passed
+
+										dss = daycount(mid(time, 3, 2), mid(time, 5, 2), mid(time, 7, 2))
+										wd = weekday(dss)
+										wd = wd + 1
+										if wd = 8 then wd = 1
+										if f_weekdays = 0 or ac_test_bits(wd, f_weekdays) then						' weekDays passed
+											ac_check_timezone = true
+											i = -1
+										end if
+									end if
+								end if
+							end if
+						end if
+					end if
+				end if
+			else
+				i = -1
+			end if
+			
+			i = i + 1
+		wend
+	end if
+	
+end function
+
+function ac_test_bits(num as char, value as long) as boolean
+
+	dim res as long
+	
+	res = 1
+	if num > 1 then
+		res = res shl (num - 1)
+	end if
+
+	if ( res and value ) <> 0 then
+		ac_test_bits = true
+	else
+		ac_test_bits = false
+	end if
+
+end function
+
+'------------------------------------------------------------------------
+'		PROFILER
+'------------------------------------------------------------------------
+
+'dim profiler_arr(PROFILER_NUMS) as PROFILERTYPE
+'dim profiler_last as dword
+'dim profiler_current as PROFILERCHNL
+
+'sub profiler_init()
+	
+'	dim i as byte
+	
+'	for i = 0 to PROFILER_NUMS - 1
+'		profiler_arr(i).count = 0
+'		profiler_arr(i).time = 0
+'	next i
+	
+'	profiler_last = sys.timercountms
+'	profiler_current = IDLE
+	
+'end sub
+
+'function profiler_add(num as PROFILERCHNL, cnt as byte) as PROFILERCHNL
+	
+'	profiler_add = profiler_current
+'	profiler_arr(profiler_current).time = profiler_arr(profiler_current).time + sys.timercountms - profiler_last
+'	profiler_last = sys.timercountms
+'	profiler_current = num
+'	profiler_arr(profiler_current).count = profiler_arr(profiler_current).count + cnt
+
+'end function
+
+'sub profiler_results()
+	
+'#if DEV_DEBUG_PRINT
+
+'	dim i as byte
+'	dim res as string
+	
+'	for i = 1 to PROFILER_NUMS - 1
+'		select case i
+'		case 0:						'IDLE
+'			res = "IDLE           "
+'		case 1: 					'TABLE OPEN
+'			res = "TABLE SELECT   "
+'		case 2:						'TABLE FIND
+'			res = "TABLE FIND     "
+'		case 3:						'TABLE READ
+'			res = "TABLE READ     "
+'		case 4:						'TABLE WRITE
+'			res = "TABLE WRITE    "
+'		case 5:						'TABLE GET
+'			res = "TABLE GET      "
+'		case 6:						'EVENT OPEN
+'			res = "EVENT SELECT   "
+'		case 7:						'EVENT PREP
+'			res = "EVENT PREP     "
+'		case 8:						'EVENT WRITE
+'			res = "EVENT WRITE    "
+'		case 9:						'EVENT FIRE
+'			res = "EVENT FIRE     "
+'		case 10:					'TIME GET
+'			res = "TIME GET       "
+'		case 11:					'RELAY OPEN
+'			res = "RELAY OPEN     "
+'		case 12:					'AC
+'			res = "ACCESS CONTROL "
+'		case 13:					'ACL
+'			res = "POLICIES       "
+'		case 14:					'TZ
+'			res = "TIMEZONES      "
+'		case 15:					'WRITE READY
+'			res = "WRITE READY    "
+'		case 16:					'WRITE VIOLATION
+'			res = "WRITE VOLATION "
+'		case 17:					'WRITE FIND EMPTY LINE
+'			res = "WRITE FIND EMP "
+'		case 18:					'WRITE WRITE TO DISK
+'			res = "WRITE SAVE     "
+'		case 19:					'WRITE FINISH
+'			res = "WRITE FINISH   "
+'		end select
+
+'		res = res + str(profiler_arr(i).count) + ", " + lstr(profiler_arr(i).time)
+'		dev_debugprint(res)
+
+'	next i
+
+'#endif
+
+'end sub
+
+'sub ac_speed_test()
+	
+'	dim buffer as string
+'	dim i as byte
+'	dim time, timeall as long
+
+'	dev_debugprint("Start speed test...")
+
+'	if fd.create("test.txt") = PL_FD_STATUS_OK then
+	
+'		dev_debugprint("File created...")
+		
+'		for i = 1 to 128 
+'			buffer = buffer + "1"
+'		next i
+		
+'		' open test file
+'		fd.filenum = 5
+		
+'		if fd.open("test.txt") = PL_FD_STATUS_OK then
+
+'			' testing write speed
+'			timeall = sys.timercountms
+
+'			for i = 1 to 100
+''				time = sys.timercountms
+'				fd.setdata(buffer)
+''					time = sys.timercountms - time
+					
+''					dev_debugprint("128 byte - " + str(time) + "ms.")
+				
+''				else
+
+''					dev_debugprint("Error write!")
+					
+''				end if
+'			next i
+
+'			timeall = sys.timercountms - timeall
+'			dev_debugprint("12800 byte - " + str(timeall) + "ms.")
+			
+'		end if
+		
+'		if fd.delete("test.txt") = PL_FD_STATUS_OK then
+'			dev_debugprint("File deleted...")
+'		end if
+	
+'	end if
+
+'	dev_debugprint("Stop speed test...")
+	
+'end sub

@@ -1,0 +1,52 @@
+enum EN_TA_DIRECTION_TYPE
+	
+	EN_TA_DT_IN = 0,
+	EN_TA_DT_OUT = 1,
+	EN_TA_DT_INTMP = 2,
+	EN_TA_DT_OUTTMP = 3
+
+end enum
+
+enum EN_TA_SHEDULE_ACT
+	
+	EN_TA_SA_SET_IN = 0,
+	EN_TA_SA_SET_OUT = 1,
+	EN_TA_SA_SET_TMPIN = 2,
+	EN_TA_SA_SET_TMPOUT = 3,
+	EN_TA_SA_IN_DISABLE = 4,
+	EN_TA_SA_IN_ENABLE = 5,
+	EN_TA_SA_OUT_DISABLE = 6,
+	EN_TA_SA_OUT_ENABLE = 7,
+	EN_TA_SA_TMPIN_DISABLE = 8,
+	EN_TA_SA_TMPIN_ENABLE = 9,
+	EN_TA_SA_TMPOUT_DISABLE = 10,
+	EN_TA_SA_TMPOUT_ENABLE = 11
+
+end enum
+
+declare ta_mode as boolean
+declare ta_sheduled as boolean
+declare ta_direction as EN_TA_DIRECTION_TYPE
+
+declare sub ta_init()
+
+#if SUPPORTS_DISPLAY
+
+declare ta_b1 as boolean
+declare ta_b2 as boolean
+declare ta_b3 as boolean
+declare ta_b4 as boolean
+
+declare ta_time as string(6)
+declare ta_date as string(11)
+
+declare sub ta_timer()
+declare function ta_check_id(card_id as string, byref name as string) as boolean
+declare sub ta_button_shedule(time as string)
+declare sub ta_check_act(act as EN_TA_SHEDULE_ACT)
+declare sub ta_set_dir(dir as EN_TA_DIRECTION_TYPE)
+declare sub ta_get_current_shedule()
+declare function ta_get_direction() as EN_TA_DIRECTION_TYPE
+declare sub ta_btn_check()
+
+#endif

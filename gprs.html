@@ -1,0 +1,82 @@
+<?
+	include "global.tbh"
+	declare it_was_save as no_yes
+	dim flag as ok_ng
+	html_channel_index=0
+?>
+
+<html>
+<HEAD>
+<META HTTP-EQUIV="content-type" content="text/html;charset=utf-8" />
+<META HTTP-EQUIV="Expires" CONTENT="Tue, 01 Jan 1980 1:00:00 GMT">
+<META HTTP-EQUIV="CACHE-CONTROL" CONTENT="NO-CACHE">
+<link rel="stylesheet" type="text/css" href="tpp_demo.css" />
+
+<script type="text/javascript">
+function FormSubmit()
+{
+document.getElementById("myForm").submit()
+}
+function IndexPage()
+  {
+  window.top.location.replace("Index.html")
+  }
+
+
+</script>
+
+</HEAD>
+
+<body <?flag=html_login_verify(yes,yes)?>>
+<? 
+	if flag=NG then goto finish
+?>
+<div>
+<br>
+	<table width='600' align=center border="0" cellspacing="0" cellpadding="0" >
+		<form id="myForm" action="s.html?" method="get">
+		<? sock_setsend("<input type = 'hidden' name = 'page' value = 'gprs'>")?>
+		<? html_print_session?>
+		<tr><td width = 80%> <h3> GPRS</h3> </td>
+		</tr>
+		<tr><td>
+		</td></tr>
+		<tr><td><br></td></tr>
+		<tr>
+			<td width = 80%>
+			<table width=100% border = "1">
+			<tr>
+			<th	width = 66%><b>Setting name</b></th>
+			<th width = 34%><b>Setting value</b></th>
+			</tr>
+			</table>		
+			</td>
+			<td>
+			</td>
+		</tr>
+
+		<? 
+		html_print_setting("gprs_htm.txt") 
+		?>
+		<tr>
+		<td width = 80%>
+			<table width = 100% border="1" cellspacing="0" cellpadding="0">
+				<tr><td><table border="0" cellspacing="1" cellpadding="0">
+					<tr><td><a href = '#' onclick='FormSubmit()'> Save </a></td>
+					 	<td><a href = 'gprs.html?session=<?sock_setsend(login_data) ?>'> Reload </a></td>
+						<td width = 100% align = right>
+						</td>
+					</tr></table>
+					</td>
+				</tr>
+			</table>
+		</td>
+		</tr>
+		</form>
+	</table>
+</div>
+<?finish:
+
+?>
+</body>
+</html>

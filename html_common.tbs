@@ -1,0 +1,156 @@
+include "global.tbh"
+
+'------------------------------------------------------------------------------
+public dim html_reboot_flag as no_yes
+public dim index_page_socknum as byte
+public dim page_code as byte
+
+'==============================================================================
+public sub html_proc_cmd
+	dim s as string
+	dim sSessionID as string
+	
+	s = get_http_argument(sock.httprqstring,"opt=")
+	sSessionID = get_http_argument(sock.httprqstring,"session=")
+	Select case s
+		case "login":
+			if login(CMD_MODE_HTTP,sSessionID,0)<>OK then
+				html_login_message=HLM_PRIORITY_REJECTED
+				logout()
+				sock_setsend("onload = IndexPage()")
+			end if
+		
+		case "logout":
+			sock_setsend("onload = IndexPage()")
+			html_login_message = HLM_LOGGED_OUT
+			logout()
+
+		case "init":
+			proc_device_op("I","")
+			html_reboot_flag = YES
+			sock_setsend("onload = IndexPage()")		
+		
+		case "reboot":
+			html_reboot_flag = YES
+			sock_setsend("onload = IndexPage()")
+
+	end select
+end sub
+
+'------------------------------------------------------------------------------
+public sub sock_setsend(byref s as string)
+'Making sure the tx buffer is free before adding more data to the buffer.
+	
+	while sock.txfree<len(s)
+		if sock.statesimple<>PL_SSTS_EST then 
+			sock.txclear
+			exit sub
+		end if
+	wend
+	sock.setdata(s)
+	sock.send
+end sub
+
+'------------------------------------------------------------------------------
+public function get_http_argument(byref http_req_string as string, byref argument as string) as string
+'Get one specific argument from the http request string.
+'For example If http_req_string = http://index.html&p1=abc&p2=def by calling this function, 
+'get_http_argument(sock.httprqstring,"p1="), the function returns "abc"
+	dim x, y as byte
+	x = instr(1, http_req_string, argument,1)
+	if (x = 0) then
+		get_http_argument = ""
+		exit function
+	end if
+	x = x + len(argument)
+	y = instr(x, http_req_string, "&",1)
+	if (y = 0) then
+		y = instr(x, http_req_string, " ",1)
+		if (y = 0) then
+			y = len(argument)
+		end if
+	end if
+	get_http_argument = mid(http_req_string, x, y - x)
+end function
+
+'------------------------------------------------------------------------------
+public function mod_http_argument(byref http_req_string as string, byref argument as string, byref arg_val as string) as string
+'modify the value of argument in the http_req_string, if the argument doesn't exist, add it the end of http_req_string 
+	dim pos1, pos2 as byte
+	dim s as string
+	'empty http_req_string
+	if http_req_string = "" then 
+		mod_http_argument = "?"+argument+"="+arg_val
+		exit function
+	end if
+	'remove the tailing infor
+	pos1 = instr(1,http_req_string," HTTP",1)
+	http_req_string = left(http_req_string,pos1-1)
+	
+	'find the argument
+	pos1 = instr(1,http_req_string,argument,1)
+	
+	'if the argument already exit, modify the value to arg_val, else add it to the end of http_req_string
+	if pos1 > 0 then 
+		pos1 = pos1+len(argument)-1
+		pos2 = instr(1,http_req_string,"?",1)
+		if pos2 > 0 then http_req_string = right(http_req_string,len(http_req_string)-pos2)
+		s = "?"+left(http_req_string,pos1)+"="+arg_val
+		
+		'the argument could be in the middle to the http_req_string
+		pos2 = instr(pos1,http_req_string,"&",1)
+		if pos2 > 0 then
+			s = s+right(http_req_string,len(http_req_string)-pos2+1)
+			mod_http_argument = s
+			exit function
+		else
+			mod_http_argument = s
+			exit function
+		end if
+	else
+		mod_http_argument = "?"+http_req_string+"&"+argument+"="+arg_val
+	end if
+end function
+
+'------------------------------------------------------------------------------
+public sub html_spec_chr_convert(byref http_req_string as string)
+	dim char_ascii as string(2)
+	dim char_str as string(1)
+	dim pos1 as byte
+	dim temp1, temp2 as string
+	do 
+		pos1 = instr(1,http_req_string,"%",1) 
+		if pos1 > 0 then
+			char_ascii = mid(http_req_string,pos1+1,2)
+			char_str = chr("&h"+char_ascii)
+			temp1 = left(http_req_string,pos1-1)
+			temp2 = right(http_req_string,len(http_req_string)-pos1-2)
+			http_req_string = temp1 + char_str + temp2
+		end if	
+	loop while pos1 > 0
+end sub
+
+public sub html_httpcmd_print_msg()
+
+end sub
+
+public sub html_choose_return_page()
+	select case page_code
+	case 0:
+		sock_setsend("onload='return_ser()'")
+	case 1:
+		sock_setsend("onload='return_sntp()'")
+	case 2:
+		sock_setsend("onload='return_agg()'")
+	case 3:
+		sock_setsend("onload='return_ethernet()'")
+	case 4:
+		sock_setsend("onload='return_gprs()'")
+	case 5:
+		sock_setsend("onload='return_wifi()'")
+	case 6:
+		sock_setsend("onload='return_password()'")		
+	case else:
+		sock_setsend("onload='IndexPage()'")
+	end select
+end sub

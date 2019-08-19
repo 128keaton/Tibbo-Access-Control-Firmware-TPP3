@@ -1,0 +1,338 @@
+include "global.tbh"
+
+dim ta_mode as boolean
+
+dim ta_sheduled as boolean
+dim ta_sh_current as EN_TA_DIRECTION_TYPE
+dim ta_direction as EN_TA_DIRECTION_TYPE
+dim ta_tmr as byte
+
+#if SUPPORTS_DISPLAY
+
+dim ta_b1 as boolean
+dim ta_b2 as boolean
+dim ta_b3 as boolean
+dim ta_b4 as boolean
+
+dim ta_time as string(6)
+dim ta_date as string(11)
+
+sub ta_init()
+	
+	ta_mode = val(stg_get("CM", 0))
+	ta_sheduled = val(stg_get("AB", 0))
+	ta_direction = EN_TA_DT_IN
+	ta_sh_current = EN_TA_DT_IN
+	ta_tmr = 0
+
+	ta_b1 = val(stg_get("B1", 0))
+	ta_b2 = val(stg_get("B2", 0))
+	ta_b3 = val(stg_get("B3", 0))
+	ta_b4 = val(stg_get("B4", 0))
+
+	if ta_mode = true then
+		ta_btn_check()
+		display_ta_icons()
+	end if
+
+end sub
+
+'sub ta_get_current_shedule()
+
+'	dim i as word
+'	dim max_record as word
+'	dim min_time as string(4)
+'	dim min_act as byte
+'	dim max_time as string(4)
+'	dim max_act as byte
+'	dim time as string(4)
+'	dim act as byte
+'	dim time_req as string(32)
+'	dim b1 as byte
+
+'	min_time = "2400"
+'	min_act = 255
+'	max_time = "0000"
+'	max_act = 255
+	
+'	' Get time for request access
+'	device_settings_sg("TT", 0, time_req, b1, DEVICE_GET)
+'	time_req = left(time_req, 2) + mid(time_req, 4, 2)
+
+'	if tbl_select_for_read("AU_BUT", "AU_BUT") = EN_TBL_STATUS_OK then
+'		tbl_get_num_records(max_record, YES)
+'		for i = 1 to max_record
+'			if tbl_is_record_deleted(i) = NO then
+'				if tbl_record_read_active(i) = EN_TBL_STATUS_OK then
+
+'					' get data for finded card entry
+'					time = tbl_field_get("time")
+'					act = tbl_field_get("act")
+					
+'					if act >= 0 and act < 4 then
+'						if time < time_req then
+'							if min_act = 255 or time > min_time then
+'								min_time = time
+'								min_act = act
+'							end if
+'						end if
+						
+'						if max_act = 255 or time > max_time then
+'							max_time = time
+'							max_act = act
+'						end if
+'					end if
+'				end if
+'			end if
+'		next i
+'	end if
+	
+'	if min_act < 255 then
+'		ta_sh_current = min_act
+'		ta_direction = min_act
+'	else
+'		if max_act < 255 then
+'			ta_sh_current = max_act
+'			ta_direction = max_act
+'		end if
+'	end if
+
+'end sub
+
+function ta_check_id(card_id as string, byref name as string) as boolean
+
+	dim j as word
+	dim card, card_from as string
+	dim card_to as string
+	dim date_req, time_req as string
+	dim dcount,mcount as word
+	dim sec as byte
+	dim hash as byte
+
+	ta_check_id = true
+
+	' Find CARD_ID
+	if tbl_select_for_read("cards", "cards") = EN_TBL_STATUS_OK then
+		hash = ac_get_name_hash(card_id)
+		for j = 1 to tbl_hash_size
+
+			if tbl_hash(j) = hash then
+				
+				if tbl_record_read_active(j) = EN_TBL_STATUS_OK then
+
+					' get data for finded card entry
+					card = tbl_field_get("id")
+					if card = card_id then
+						name = tbl_field_get("name")
+						card_from = tbl_field_get("actTime")
+						card_to = tbl_field_get("deactTime")
+						j = tbl_hash_size
+					end if
+				end if
+			end if
+		next j
+	end if
+	
+	if ta_sheduled = true then ta_set_dir(ta_sh_current)
+
+end function
+
+sub ta_button_shedule(time as string)
+
+	dim i as word
+	dim f_time as string
+	dim f_act as byte
+	dim time_req as string
+
+	if ta_mode = true and ta_sheduled = true then
+
+		if ta_tmr > 0 then
+			ta_tmr = ta_tmr - 1
+			if ta_tmr = 0 then
+				ta_set_dir(ta_sh_current)
+			end if
+		end if
+		
+		if right(time, 2) = "00" then
+			time_req = left(time, 2) + mid(time, 4, 2)
+			if ta_sheduled = 1 then
+				' Check button shedule table
+				if tbl_select_for_read("AU_BUT", "AU_BUT") = EN_TBL_STATUS_OK then
+
+					i = 1
+					while tbl_record_find(EN_TBL_RECORD_BOTH, time_req, "time", i, EN_TBL_SEARCH_DOWN, PL_FD_FIND_EQUAL) = EN_TBL_STATUS_OK
+						if tbl_record_read_active(i) = EN_TBL_STATUS_OK then
+
+							' get data for finded card entry
+							f_act = tbl_field_get("act")
+
+							ta_check_act(f_act)
+
+						else 
+							i = -1
+						end if
+
+						i = i + 1
+					wend
+				end if
+					
+			end if
+		end if
+	end if
+	
+end sub
+
+sub ta_check_act(act as EN_TA_SHEDULE_ACT)
+
+	select case act
+	case EN_TA_SA_SET_IN:
+		ta_set_dir(EN_TA_DT_IN)
+		ta_sh_current = EN_TA_DT_IN
+
+	case EN_TA_SA_SET_OUT:
+		ta_set_dir(EN_TA_DT_OUT)
+		ta_sh_current = EN_TA_DT_OUT
+
+	case EN_TA_SA_SET_TMPIN:
+		ta_set_dir(EN_TA_DT_INTMP)
+		ta_sh_current = EN_TA_DT_INTMP
+
+	case EN_TA_SA_SET_TMPOUT:
+		ta_set_dir(EN_TA_DT_OUTTMP)
+		ta_sh_current = EN_TA_DT_OUTTMP
+		
+	case EN_TA_SA_IN_DISABLE:
+		ta_b1 = false
+		ta_btn_check()
+		
+	case EN_TA_SA_IN_ENABLE:
+		ta_b1 = true
+		ta_btn_check()
+		
+	case EN_TA_SA_OUT_DISABLE:
+		ta_b2 = false
+		ta_btn_check()
+		
+	case EN_TA_SA_OUT_ENABLE:
+		ta_b2 = true
+		ta_btn_check()
+		
+	case EN_TA_SA_TMPIN_DISABLE:
+		ta_b3 = false
+		ta_btn_check()
+		
+	case EN_TA_SA_TMPIN_ENABLE:
+		ta_b3 = true
+		ta_btn_check()
+		
+	case EN_TA_SA_TMPOUT_DISABLE:
+		ta_b4 = false
+		ta_btn_check()
+		
+	case EN_TA_SA_TMPOUT_ENABLE:
+		ta_b4 = true
+		ta_btn_check()
+
+	end select
+
+	display_ta_icons()
+
+end sub
+
+sub ta_btn_check()
+
+	dim i as byte
+	
+	i = 0
+
+	if ta_b1 = true then
+		i = i + 1
+	else
+		if ta_direction = EN_TA_DT_IN then ta_direction = ta_get_direction()
+		if ta_sh_current = EN_TA_DT_IN then ta_sh_current = ta_get_direction()
+	end if
+
+	if ta_b2 = true then
+		i = i + 1
+	else
+		if ta_direction = EN_TA_DT_OUT then ta_direction = ta_get_direction()
+		if ta_sh_current = EN_TA_DT_OUT then ta_sh_current = ta_get_direction()
+	end if
+
+	if ta_b3 = true then
+		i = i + 1
+	else
+		if ta_direction = EN_TA_DT_INTMP then ta_direction = ta_get_direction()
+		if ta_sh_current = EN_TA_DT_INTMP then ta_sh_current = ta_get_direction()
+	end if
+
+	if ta_b4 = true then
+		i = i + 1
+	else
+		if ta_direction = EN_TA_DT_OUTTMP then ta_direction = ta_get_direction()
+		if ta_sh_current = EN_TA_DT_OUTTMP then ta_sh_current = ta_get_direction()
+	end if
+
+	if i = 0 then
+		ta_b1 = true
+		ta_direction = EN_TA_DT_IN
+		ta_sh_current = EN_TA_DT_IN
+	end if
+
+end sub
+
+function ta_get_direction() as EN_TA_DIRECTION_TYPE
+
+	ta_get_direction = EN_TA_DT_IN
+	if ta_b4 = true then ta_get_direction = EN_TA_DT_OUTTMP
+	if ta_b3 = true then ta_get_direction = EN_TA_DT_INTMP
+	if ta_b2 = true then ta_get_direction = EN_TA_DT_OUT
+	if ta_b1 = true then ta_get_direction = EN_TA_DT_IN
+
+end function
+
+sub on_kp(key_event as enum pl_kp_event_codes, key_code as byte)
+	
+	if ta_mode = true then 
+		select case key_code
+		case 0:
+			ta_set_dir(EN_TA_DT_IN)
+
+		case 1:
+			ta_set_dir(EN_TA_DT_OUT)
+		
+		case 2:
+			ta_set_dir(EN_TA_DT_INTMP)
+
+		case 3:
+			ta_set_dir(EN_TA_DT_OUTTMP)
+
+		end select
+
+		if ta_sheduled = true then ta_tmr = 20
+	end if
+
+end sub
+
+sub ta_set_dir(dir as EN_TA_DIRECTION_TYPE)
+	
+	select case dir
+	case EN_TA_DT_IN:
+		if ta_b1 = true then ta_direction = EN_TA_DT_IN
+		
+	case EN_TA_DT_OUT:
+		if ta_b2 = true then ta_direction = EN_TA_DT_OUT
+		
+	case EN_TA_DT_INTMP:
+		if ta_b3 = true then ta_direction = EN_TA_DT_INTMP
+		
+	case EN_TA_DT_OUTTMP:
+		if ta_b4 = true then ta_direction = EN_TA_DT_OUTTMP
+		
+	end select
+
+	display_ta_icons()
+
+end sub
+
+#endif

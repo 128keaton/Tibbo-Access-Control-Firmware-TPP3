@@ -1,0 +1,4 @@
+>>DH	DHCP					B,L,0-Disabled;1-Enabled;	^
+>>IP	IP-address			S,I,15	^
+>>GI	Gateway IP		S,I,15	^
+>>NM	Subnet mask			S,I,15	^

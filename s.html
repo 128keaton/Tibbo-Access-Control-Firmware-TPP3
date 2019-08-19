@@ -1,0 +1,84 @@
+<?
+	'this page was created, to process long httprqstring,
+	'to achieve this, we must separate the loading and saving procedures.
+	'so we can read out the data from rxbuffer without destroy some of the neccessary paramters for loading page,
+	'such as channel number and session number
+	include "global.tbh"
+	declare it_was_save as no_yes
+	
+	dim flag as ok_ng
+?>
+
+<html>
+<HEAD>
+<META HTTP-EQUIV="content-type" content="text/html;charset=utf-8" />
+<META HTTP-EQUIV="Expires" CONTENT="Tue, 01 Jan 1980 1:00:00 GMT">
+<META HTTP-EQUIV="CACHE-CONTROL" CONTENT="NO-CACHE">
+<link rel="stylesheet" type="text/css" href="tpp_demo.css" />
+
+<script type="text/javascript">
+
+function IndexPage()
+{
+window.top.location.replace("Index.html")
+}
+
+function return_ser()
+{
+window.top.showframe.location.replace("serial.html?ch=<?sock_setsend(str(html_channel_index))?>&session=<?sock_setsend(login_data)?>")
+}
+
+function return_sntp()
+{
+window.top.showframe.location.replace("sntp.html?session=<?sock_setsend(login_data)?>")
+}
+
+function return_agg()
+{
+window.top.showframe.location.replace("agg.html?session=<?sock_setsend(login_data)?>")
+}
+
+function return_ethernet()
+{
+window.top.showframe.location.replace("ethernet.html?session=<?sock_setsend(login_data)?>")
+}
+
+function return_gprs()
+{
+window.top.showframe.location.replace("gprs.html?session=<?sock_setsend(login_data)?>")
+}
+
+function return_wifi()
+{
+window.top.showframe.location.replace("wifi.html?session=<?sock_setsend(login_data)?>")
+}
+
+function return_password()
+{
+window.top.showframe.location.replace("password.html?session=<?sock_setsend(login_data)?>")
+}
+
+</script>
+
+</HEAD>
+
+<body <?
+	flag=html_login_verify(yes,yes)
+	if flag=NG then
+		sock_setsend(">")
+		goto finish
+	else
+		html_save_setting()
+		html_choose_return_page()
+		
+	end if
+?>>
+
+<div>
+
+</div>
+<?finish:
+
+?>
+</body>
+</html>

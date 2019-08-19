@@ -1,0 +1,51 @@
+
+enum EN_SR_DIRECTION_TYPE
+
+	EN_SR_DT_NOT_APPLICABLE = 0,
+	EN_SR_DT_IN = 1,
+	EN_SR_DT_OUT = 2
+	
+end enum
+
+enum EN_SR_STATE
+
+	EN_SR_WAIT,
+	EN_SR_CHECKING,
+	EN_SR_GRANTED,
+	EN_SR_DENIED,
+	EN_SR_APB
+
+end enum
+
+type T_SERIAL_READER
+	
+	num as byte
+	direction as EN_SR_DIRECTION_TYPE
+	relayChannel as byte
+	delay_beep as byte
+	state as EN_SR_STATE
+	delay_state as byte
+	card_id as string(16)
+
+end type
+
+const SERIALS_NUMBER = 4
+declare readers_table_wait_init as byte
+declare readers(SERIALS_NUMBER) as T_SERIAL_READER
+declare param_rhc, param_rhl, param_pos, param_rfc as byte
+declare serial_mc as boolean
+declare serial_mc_id as string(25)
+
+declare sub serial_init()
+declare sub serial_tbl_init()
+declare sub serial_check_tbl_update()
+declare sub serial_data_operate()
+declare function get_serial(channel as byte) as byte
+declare function get_reader(channel as byte) as byte
+declare function hex_str_to_dec_str(byref hex_str as string) as string
+declare sub serial_beep_start(reader as byte)
+declare sub serial_beep_end(reader as byte)
+declare sub serial_init_io(reader as byte)
+declare function serial_correct_data(data as string) as string
+declare sub serial_timer()
+declare function serial_apb_result(reader as byte, result as boolean, lastTime as string(23)) as EN_FUNC_STATUS

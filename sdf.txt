@@ -1,0 +1,21 @@
+I=$NET;D=Network;T=GROUP
+I=DH@1;D=DHCP;T=INT;C=STATIC;O=0- Disabled/0/1- Enabled/1;F=R
+I=IP@1;D=IP-address;T=STRING;C=IPCTRL;S=DH@1==1?"a":"e";F=R*
+I=GI@1;D=Gateway IP;T=STRING;C=IPCTRL
+I=NM@1;D=Subnet mask;T=STRING;C=IPCTRL
+I=$WLN;D=Wi-Fi;T=GROUP
+I=WE@1;D=Wi-Fi mode;T=INT;C=STATIC;O=0- Disabled/0/1- Enabled (on demand)/1/2- Enabled (permanently)/2;F=R
+I=WD@1;D=DHCP;T=INT;C=STATIC;O=0- Disabled/0/1- Enabled/1;F=R;S=WE@1!=0?"e":"i"
+I=WI@1;D=IP-address;T=STRING;C=IPCTRL;S=WD@1==1?"a":"e";F=R*;S=WE@1!=0?"e":"i"
+I=WG@1;D=Gateway IP;T=STRING;C=IPCTRL;S=WE@1!=0?"e":"i"
+I=WN@1;D=Subnet mask;T=STRING;C=IPCTRL;S=WE@1!=0?"e":"i"
+I=WA@1;D=Access point (SSID);T=STRING;C=EDIT;MAXLEN=15;F=R*;S=WE@1!=0?"e":"i"
+I=WS@1;D=AP security mode;T=INT;C=STATIC;S=WE@1!=0?"e":"i";O=0- Disabled/0/1- WEP64/1/2- WEP128/2/3- WPA-PSK (TKIP)/3/4- WPA2-PSK (AES)/4
+I=WP@1;D=AP password;T=STRING;C=EDIT;MAXLEN=26;F=R*;S=WE@1!=0?"e":"i"
+I=$GEN;D=AggreGate;T=GROUP
+I=AR@1;D=Server connection;T=INT;C=STATIC;O=0- Disabled/0/1- Enabled/1
+I=ON@1;D=Owner name;T=STRING;C=EDIT;MAXLEN=16;F=R*
+I=DN@1;D=Device name;T=STRING;C=EDIT;MAXLEN=16;F=R*
+I=TI@1;E=1;D=Server IP;T=STRING;C=IPCTRL;S=AR@1!=0?"e":"i"
+I=TP@1;E=1;D=Server port;T=INT;C=EDIT;S=AR@1!=0?"e":"i";F=R*
+I=CT@1;D=Connection timeout (min);T=INT;C=EDIT/SPIN/0/1/1/10;O=0- Disabled/0;V=CT@1>255?"Maximum timeout is 255 minutes":""

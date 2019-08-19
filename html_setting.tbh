@@ -1,0 +1,15 @@
+#ifndef TAB
+#define TAB 9
+#endif
+
+const MAX_HTML_NUM_SETTINGS = STG_MAX_NUM_SETTINGS+2
+
+'------------------------------------------------------------------------------
+declare html_channel_index as byte
+
+'------------------------------------------------------------------------------
+declare sub html_save_setting
+declare sub html_channel_selected
+declare sub html_print_setting(byref html_descr_file as string)
+declare sub callback_html_stg_mod_sg(byref stg_name as string, index as byte, byref stg_val as string, op as en_stg_rdwr)
+declare sub html_ask_for_reboot()

@@ -1,0 +1,77 @@
+=== 1_00_11
+DONE	modify callback_stg_post_set() fix the bug that coolsure_setting_updated() is not updated for alarms if connect to AggreGate
+DONE	increase GPRS_POST_RESET_TOUT from 60 to 100 in gprs.tbs
+
+=== 1_00_12
+DONE	change the assigned pins for GPRS module to the ones corresponding to the coolsure board
+
+=== 1_00_13
+DONE	call html_session_init from boot()
+DONE	add APN parameter for GPRS
+DONE	add pin assignments for the signal strength leds
+
+=== 1_00_14
+DONE	fix GPRS problem in EM1206, the pin assignment was wrong
+
+=== 1_00_15
+DONE	create a new system for pulling coolsure data, now coolsure has it's own description file coolsure.txt
+
+=== 1_00_16
+DONE	simplify fire_statistic_acu_event, fire_statistic_fcu_event, fire_monitor_fcu_event fire_monitor_acu_event, so it's easier to modify the event.
+DONE	modify coolsure_asc_to_val so it can process 4 bytes value
+
+=== 1_00_17
+DONE	coolsure.txt chang setpoint items from read only once, to read every 2hours as statistic items
+DONE	coolsure_convert_stg_name_to_data_type() unit_type parameter is not bref anymore
+DONE 	create coolsure_reset_setting_updated(byref stg_name as string) and coolsure_calculate_setting_updated_max(index as byte)
+
+=== 1_00_18
+DONE	change data type of statistics Av Abs In humid from 29 to 27,data type of statistics Av Abs out humid from 30 to 28
+DONE	change the logic of caluclating average, now only registered ACU are accounted for average value calculation
+DONE	remove Humidity Setpoints and Delta Humidity from the web and AggreGate interface
+DONE	add init, reboot and clear ACU functions to aggregate
+
+=== 1_00_19
+DONE	on AggreGate now only setpoints all ACU is editable, rest are read only.
+DONE	now when aggregate set the setpoints, device send request, and read back the value, if not updated, resend. give up after 4 retry.
+DONE	calculated the average for returned setpoint value.
+
+=== 1_00_20
+DONE	Add All ACU event for monitoring and statistic items
+
+=== 1_00_21
+DONE	fix the FCU alarm status 1
+DONE	change all network related settings to init when invalid
+
+=== 1_00_22
+DONE	reduce the http sock number NUM_HTTP_SOCKETS to 2
+DONE	on_sys_timer() fix the connection timeout for aggregate was not used
+
+=== 1_00_23
+DONE	relpace html pages and definition files with the "updated_txt_html.rar" from coolsure
+DONE	remove "aT" and related code
+DONE	add agg_under_gprs_counter, and now when the connection to aggregate is lost under gprs, after a number of fail retry, the GPRS will re-initialize.
+
+=== 1_00_24
+DONE	add units to the description in all webpages
+DONE 	Total Energy Consumed, Energy since last reset, Input power, using sum instead of average in index 0.
+DONE	fix the bug with gprs_socket, move gprs_socket=sock_get("GPRS") to gprs_init()
+DONE	change the value range of Track Delta
+
+=== 1_00_25
+DONE	fix the problem with gprs module returns corrupted data by add gprs_reply="" in gprs_start_over()
+DONE	rename agg_under_gprs_counter to agg_retry_counter and modify callback_agg_error. now counter counts down even with ethernet connection and reset the connection by agg_stop()
+DONE	coolsure_proc_data(), for data_type 64 (ACU broadcast 1) skip the update if the index is 0 (if i>MAX_NUM_OF_ACU or i=0 then goto next_packet)
+
+=== 1_00_26
+Major structure change.
+
+=== 1_01_02
+DONE	in on_sock_event() now if stg_get("TN")="" then use rmcs.coolsure.com for DNS query
+DONE	in agg_proc_data() add a local variable endless_loop_count, prevent corrupt data cause a proc_data<->proc_cmd endless loop
+
+=== 1_01_03
+DONE	modify the agg_proc_data() to deal with long set modtime command, which will often being break down into small pieces, cause delay when using gprs.
+DONE	fix the bug in q.html which refresh change ACU static page into ACU monitor page during auto refresh.
+DONE	change AGG_PORT_FALLBACK_MAX from 5 to 2
+DONE	modify coolsure_send_action() EEV moved toe data 2, and compressor speed moved to data 3

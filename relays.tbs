@@ -1,0 +1,566 @@
+include "global.tbh"
+
+	dim relay_emergency_status as EN_EMERGENCY_STATUS
+	dim relay_block_status as EN_BLOCK_STATUS
+	dim relay_perco as boolean
+
+	dim relays(RELAYS_NUMBER) as T_RELAY_SET
+
+	dim relay_emergency_counter as byte
+	dim relay_block_counter as byte
+	
+	dim relay_ac as boolean
+	
+sub relay_init()
+
+	dim i as byte
+	
+	relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE
+	relay_block_status = EN_BS_BLOCK_NOT_ACTIVE
+	relay_emergency_counter = 0
+	relay_block_counter = 0
+	
+	sys.onsystimerperiod = 6
+	
+	for i = 0 to RELAYS_NUMBER - 1
+		relays(i).status = CLOSED
+		relays(i).timer = 0
+		relays(i).emerg_stat = false
+		relays(i).block_stat = false
+		relays(i).spec_timer = 0
+	next i
+
+	relay_init_arrays()
+	relay_state_init()
+
+	if (pin_get_emergency_relays() = 0) and (pin_get_block_relays() = 0) then
+		relay_perco = false
+	else
+		relay_perco = true
+	end if
+
+end sub
+
+sub relay_state_init()
+
+	dim i as byte
+	dim b as byte
+	
+	b = 1
+	for i = 0 to RELAYS_NUMBER - 1
+		if relay_emergency_status = EN_ES_EMERGENCY_ACTIVE then
+			if relay_perco = true then
+				if (pin_get_emergency_relays() and b) <> 0 then
+					relay_set_emergency(i + 1, OPENED)
+				else
+					relay_set_emergency(i + 1, CLOSED)
+				end if
+			else
+				relay_set_emergency(i + 1, OPENED)
+			end if
+		end if
+		if relay_block_status = EN_BS_BLOCK_ACTIVE then
+			if relay_perco = true then
+				if (pin_get_block_relays() and b) <> 0 then
+					relay_set_block(i + 1, OPENED)
+				else
+					relay_set_block(i + 1, CLOSED)
+				end if
+			else
+				relay_set_block(i + 1, CLOSED)
+			end if
+		end if
+		if relays(i).status = OPENED then
+			relay_change_status(i+1, OPENED, false)
+		end if
+		if relays(i).status = LONG_OPENED then
+			relay_change_status(i+1, LONG_OPENED, false)
+		end if
+
+#if SUPPORTS_DISPLAY
+		display_relay_state(i + 1)
+#endif
+
+	next i
+
+end sub
+
+sub relay_init_arrays()
+	
+	dim i as word
+	
+	' Set to unused for all elements array of relays
+	for i = 0 to RELAYS_NUMBER - 1
+		relays(i).impulse = val(stg_get("RI", i))
+		relays(i).relay_type = val(stg_get("RS", i))
+		relays(i).hw_num = val(stg_get("NR", i))
+	next i
+	
+	relay_ac = val(stg_get("AC", 0))
+
+#if DEV_DEBUG_PRINT
+	dev_debugprint("Arrays for relays has updated")
+#endif
+
+end sub
+
+sub relay_open_channel(channel as byte)
+	
+	dim i as word
+	dim b as byte
+	
+	b = 1
+	for i = 0 to RELAYS_NUMBER - 1
+		if (channel and b) <> 0 then
+			relay_change_status(i+1, OPENED, false)
+		end if
+		b = b shl 1
+	next i
+
+end sub
+
+function relay_open_channel_agg(channel as byte) as EN_FUNC_STATUS
+	
+	dim i as word
+	dim b as byte
+	
+	relay_open_channel_agg = EN_FS_FAIL
+
+	b = 1
+	for i = 0 to RELAYS_NUMBER - 1
+		if (channel and b) <> 0 then
+			relay_open_channel_agg = EN_FS_SUCCESSFUL
+			relay_change_status(i+1, OPENED, false)
+		end if
+		b = b shl 1
+	next i
+	
+end function
+
+function relay_open_channel_long(channel as byte) as EN_FUNC_STATUS
+	
+	dim i as word
+	dim b as byte
+	
+	relay_open_channel_long = EN_FS_FAIL
+
+	b = 1
+	for i = 0 to RELAYS_NUMBER - 1
+		if (channel and b) <> 0 then
+			relay_open_channel_long = EN_FS_SUCCESSFUL
+			relay_change_status(i+1, LONG_OPENED, false)
+		end if
+		b = b shl 1
+	next i
+
+end function
+
+function relay_close_channel_long(channel as byte) as EN_FUNC_STATUS
+	
+	dim i as word
+	dim b as byte
+	
+	relay_close_channel_long = EN_FS_FAIL
+
+	b = 1
+	for i = 0 to RELAYS_NUMBER - 1
+		if (channel and b) <> 0 then
+			relay_close_channel_long = EN_FS_SUCCESSFUL
+			relay_change_status(i+1, CLOSED, false)
+		end if
+		b = b shl 1
+	next i
+	
+end function
+
+sub relay_control_timer()
+
+	dim i as byte
+	
+	for i = 0 to RELAYS_NUMBER - 1
+		if relays(i).timer <> 0 then 
+			relays(i).timer = relays(i).timer - 1
+			if relays(i).timer = 0 then
+				if relays(i).status = OPENED then
+					relay_change_status(i+1, CLOSED, false)
+				end if
+			end if
+		end if
+		if relays(i).spec_timer <> 0 then
+			relays(i).spec_timer = relays(i).spec_timer - 1
+			if relays(i).spec_timer = 0 then
+				relay_change_status(i+1, CLOSED, true)
+			end if
+		end if
+	next i
+
+end sub
+
+sub relay_emergency_start(rls as byte)
+
+	dim i as word
+	dim b as byte
+
+	relay_emergency_counter = relay_emergency_counter + 1
+	
+	if relay_emergency_counter = 1 then
+		event_add(EN_ES_STATE, EN_EE_SET, "EMERGENCY", "")
+
+		relay_emergency_status = EN_ES_EMERGENCY_ACTIVE
+		
+#if SUPPORTS_DISPLAY
+		display_lcd_access("EMERGENCY OPENED!!!", 0, 90, 320, 40, 31)
+#endif
+
+		if rls = 0 then
+			' Find relay data
+			for i = 0 to RELAYS_NUMBER - 1
+				relay_set_emergency(i + 1, OPENED)
+			next i
+		else
+			b = 1
+			for i = 0 to RELAYS_NUMBER - 1
+				if (rls and b) <> 0 then
+					relay_set_emergency(i+1, OPENED)
+					if relays(i).impulse > 0 then
+						relays(i).spec_timer = relays(i).impulse
+					end if
+				else
+					relay_set_emergency(i+1, CLOSED)
+				end if
+				b = b shl 1
+			next i
+		end if
+	end if
+
+end sub
+
+sub relay_emergency_end(rels as byte)
+	
+	dim i as word
+	dim b as byte
+
+	relay_emergency_counter = relay_emergency_counter - 1
+	
+	if relay_emergency_counter = 0 then
+
+		event_add(EN_ES_STATE, EN_EE_UNSET, "EMERGENCY", "")
+		relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE
+		
+		' Find relay data
+		b = 1
+		for i = 0 to RELAYS_NUMBER - 1
+			if (rels and b) <> 0 then
+				if relays(i).impulse > 0 then
+					relays(i).spec_timer = relays(i).impulse
+				end if
+			end if
+			relay_reset_emergency(i + 1)
+			b = b shl 1
+		next i
+
+#if SUPPORTS_DISPLAY
+		if relay_block_status = EN_BS_BLOCK_ACTIVE then
+			display_lcd_access("BLOCKED!!!", 0, 90, 320, 40, 31)
+		else
+			display_lcd_access(" ", 0, 90, 320, 40, 0)
+		end if
+#endif
+	end if
+
+end sub
+
+sub relay_block_start(rels as byte)
+	
+	dim i as word
+	dim b as byte
+
+	relay_block_counter = relay_block_counter + 1
+
+	if relay_block_counter = 1 then
+
+		relay_block_status = EN_BS_BLOCK_ACTIVE
+
+		event_add(EN_ES_STATE, EN_EE_SET, "BLOCK", "")
+
+		if rels = 0 then
+			' Find relay data
+			for i = 0 to RELAYS_NUMBER - 1
+				relay_set_block(i + 1, CLOSED)
+			next i
+		else
+			b = 1
+			for i = 0 to RELAYS_NUMBER - 1
+				if (rels and b) <> 0 then
+					relay_set_block(i+1, OPENED)
+					if relays(i).impulse > 0 then
+						relays(i).spec_timer = relays(i).impulse
+					end if
+				else
+					relay_set_block(i+1, CLOSED)
+				end if
+				b = b shl 1
+			next i
+		end if
+
+#if SUPPORTS_DISPLAY
+		if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE then
+			display_lcd_access("BLOCKED!!!", 0, 90, 320, 40, 31)
+		end if
+#endif
+	end if
+
+end sub
+
+sub relay_block_end(rels as byte)
+
+	dim i as byte
+	dim b as byte
+	
+	relay_block_counter = relay_block_counter - 1
+	
+	if relay_block_counter = 0 then
+
+		relay_block_status = EN_BS_BLOCK_NOT_ACTIVE
+
+		event_add(EN_ES_STATE, EN_EE_UNSET, "BLOCK", "")
+
+		' Find relay data
+		b = 1
+		for i = 0 to RELAYS_NUMBER - 1
+			if (rels and b) <> 0 then
+				if relays(i).impulse > 0 then
+					relays(i).spec_timer = relays(i).impulse
+				end if
+			end if
+			relay_reset_block(i + 1)
+			b = b shl 1
+		next i
+
+#if SUPPORTS_DISPLAY
+		if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE then
+			display_lcd_access(" ", 0, 90, 320, 40, 0)
+		end if
+#endif
+	end if
+	
+end sub
+
+sub relay_set_emergency(relay as byte, stat as EN_RELAY_STATUS)
+
+	select case stat
+	case CLOSED:
+		if relay_perco = true then
+			event_add(EN_ES_RELAY, EN_EE_CLOSE, Str(relay), "")
+			relay_reset(relay)
+		end if
+		
+	case OPENED:
+		if relay_perco = true then
+			relays(relay-1).emerg_stat = true
+			event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+			relay_set(relay)
+		else
+			event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+			relay_set(relay)
+		end if
+		
+	end select
+
+#if SUPPORTS_DISPLAY
+	display_relay_state(relay)
+#endif
+
+end sub
+
+sub relay_reset_emergency(relay as byte)
+
+	relays(relay-1).emerg_stat = false
+	if relays(relay-1).spec_timer = 0 then
+		if relays(relay-1).block_stat = true then
+			event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+			relay_set(relay)
+		else
+			if relay_block_status = EN_BS_BLOCK_NOT_ACTIVE and (relays(relay-1).status = OPENED or relays(relay-1).status = LONG_OPENED) then
+				event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+				relay_set(relay)
+			else
+				event_add(EN_ES_RELAY, EN_EE_CLOSE, Str(relay), "")
+				relay_reset(relay)
+			end if
+		end if
+	else
+		event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+		relay_set(relay)
+	end if
+
+#if SUPPORTS_DISPLAY
+	display_relay_state(relay)
+#endif
+
+end sub
+
+sub relay_set_block(relay as byte, stat as EN_RELAY_STATUS)
+
+	select case stat
+	case CLOSED:
+		if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE then
+			event_add(EN_ES_RELAY, EN_EE_CLOSE, Str(relay), "")
+			relay_reset(relay)
+		end if
+		
+	case OPENED:
+		if relay_perco = true then
+			relays(relay-1).block_stat = true
+			if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE then
+				event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+				relay_set(relay)
+			end if
+		end if
+		
+	end select
+
+#if SUPPORTS_DISPLAY
+	display_relay_state(relay)
+#endif
+
+end sub
+
+sub relay_reset_block(relay as byte)
+
+	relays(relay-1).block_stat = false
+	if relays(relay-1).spec_timer = 0 then
+		if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE then
+			if relays(relay-1).status = OPENED or relays(relay-1).status = LONG_OPENED then
+				event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+				relay_set(relay)
+			else
+				event_add(EN_ES_RELAY, EN_EE_CLOSE, Str(relay), "")
+				relay_reset(relay)
+			end if
+		end if
+	else
+		event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+		relay_set(relay)
+	end if
+
+#if SUPPORTS_DISPLAY
+	display_relay_state(relay)
+#endif
+
+end sub
+
+sub relay_change_status(relay as byte, stat as EN_RELAY_STATUS, force as boolean)
+
+	select case stat
+	case CLOSED:
+		relays(relay-1).status = stat
+		if (relay_perco = true and relay_block_status = EN_BS_BLOCK_ACTIVE and relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and flag_block_agg = EN_AS_OFF) 
+		   or
+		   (relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and relay_block_status = EN_BS_BLOCK_NOT_ACTIVE)
+		   or
+		   (force = true) then
+			event_add(EN_ES_RELAY, EN_EE_CLOSE, Str(relay), "")
+			relay_reset(relay)
+		end if
+
+	case OPENED:
+		relays(relay-1).status = stat
+		relays(relay-1).timer = relays(relay-1).impulse
+		if (relay_perco = true and relay_block_status = EN_BS_BLOCK_ACTIVE and relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and flag_block_agg = EN_AS_OFF) 
+		   or
+		   (relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and relay_block_status = EN_BS_BLOCK_NOT_ACTIVE) then
+			event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+			if relays(relay-1).timer <> 0 then
+				relay_set(relay)
+			else
+				relay_set(relay)
+				relay_delay_minimum()
+				relays(relay-1).status = CLOSED
+				if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and relay_block_status = EN_BS_BLOCK_NOT_ACTIVE then
+					event_add(EN_ES_RELAY, EN_EE_CLOSE, Str(relay), "")
+					relay_reset(relay)
+				end if
+			end if
+		end if
+		
+	case LONG_OPENED:
+		relays(relay-1).status = LONG_OPENED
+		if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and relay_block_status = EN_BS_BLOCK_NOT_ACTIVE then
+			event_add(EN_ES_RELAY, EN_EE_OPEN, Str(relay), "")
+			relay_set(relay)
+		end if
+		
+	end select
+	
+#if SUPPORTS_DISPLAY
+	display_relay_state(relay)
+#endif
+
+end sub
+
+sub relay_delay_minimum()
+
+	dim i as word
+
+	for i = 0 to RELAYS_MINIMUM_DELAY
+	next
+
+end sub
+
+sub relay_set(relay as byte)
+
+	io.num = relay_get_socket(relay)
+	io.enabled = YES
+	if relays(relay-1).relay_type = EN_RT_NORMAL_OPEN then
+		io.state = LOW
+	else
+		io.state = HIGH
+	end if
+	
+end sub
+
+sub relay_reset(relay as byte)
+	
+	io.num = relay_get_socket(relay)
+	io.enabled = YES
+	if relays(relay-1).relay_type = EN_RT_NORMAL_OPEN then
+		io.state = HIGH
+	else
+		io.state = LOW
+	end if
+
+end sub
+
+sub relay_close_opened(dir_t as EN_SR_DIRECTION_TYPE)
+	dim i, j as byte
+	dim b as byte
+
+	if relay_ac = 1 then
+		' Find channel for door
+		for i = 0 to SERIALS_NUMBER - 1
+			if readers(i).num > 0 then
+				if dir_t = EN_SR_DT_NOT_APPLICABLE 
+				   or (dir_t = EN_SR_DT_IN and readers(i).direction = EN_SR_DT_IN) 
+				   or (dir_t = EN_SR_DT_OUT and readers(i).direction = EN_SR_DT_OUT) then
+					b = 1
+					for j = 0 to RELAYS_NUMBER - 1
+						if (readers(i).relayChannel and b) <> 0 then
+							if relays(j).status <> CLOSED then
+								relay_change_status(j+1, CLOSED, false)
+							end if
+						end if
+						b = b shl 1
+					next j
+				end if
+			end if
+		next
+	end if
+	
+end sub
+
+function relay_get_socket(relay as byte) as byte
+
+	relay_get_socket = relays(relay - 1).hw_num
+
+end function

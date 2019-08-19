@@ -1,0 +1,21 @@
+enum EN_AGG_STATE
+	EN_AS_OFF,
+	EN_AS_ON
+end enum
+
+enum EN_FUNC_STATUS
+	EN_FS_SUCCESSFUL = 0,
+	EN_FS_FAIL = 1
+end enum
+
+declare flag_emergency_agg as EN_AGG_STATE
+declare flag_block_agg as EN_AGG_STATE
+
+declare function function_emergency_set() as EN_FUNC_STATUS
+declare function function_emergency_reset() as EN_FUNC_STATUS
+declare function function_block_set() as EN_FUNC_STATUS
+declare function function_block_reset() as EN_FUNC_STATUS
+declare function function_channel_open(channel as byte) as EN_FUNC_STATUS
+declare function function_channel_open_long(channel as byte) as EN_FUNC_STATUS
+declare function function_channel_close_long(channel as byte) as EN_FUNC_STATUS
+declare sub function_init()

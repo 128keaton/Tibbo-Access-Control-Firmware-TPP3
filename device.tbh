@@ -1,0 +1,312 @@
+#define BEEP_DIVIDER 21600
+
+'------------------------------------------------------------------------------
+const NUM_HTTP_SOCKETS=3
+const SOCK_HTTP_TXBUFF_SIZE=4
+const HTML_CONFIRM_LOG_OFF = "Would you like to log out?"
+const HTML_CONFIRM_INITIALIZE = "Would you like to initialize the device? \\nSome of the settings will only be effective after reboot!"
+const HTML_CONFIRM_REBOOT = "Would you like to reboot the device? \\nIP address of the device might change after reboot!"
+const HTML_REBOOT_REQUIRED = "The changes you made might only take effects after device reboot. \\n Would you like to reboot the device now?"
+const HTML_LOWER_PRIO_INPROC = "Another session with lower priority is in progress. Proceed and interupt the low-priority session?"
+const HTML_LOGGED_OUT = "<b>Logged out.</b>"
+const HTML_INVALID_LOGIN = "<b>Invalid password. Please try again.</b>"
+const HTML_INVALID_SESSION = "<b>Invalid session ID, or other user is currently logged in, please log in again.</b>"
+const HTML_NO_PRIORITY = "<b>Another user is currently logged in from a client with higher priority.</b>"
+const HTML_NOT_LOGGED_IN = "<b>You are not logged in. This could be because your login session has expired OR because another session with higher priority has started</b>"
+const BUTTON_CONST_QUICK_INIT=5 'in 0.5 intervals -- how long you need to press button for quick init
+const AGG_PORT_FALLBACK_MAX=2
+'------------------------------------------------------------------------------
+const PAT_GAP=						"-**"					'a special empty pattern used to cause on_pat event
+const PAT_BOTH_LOOP=				"B~"					'boot in progress
+const PAT_BLINK_BOTH_TOGETHER_FAST=	"B-B-B-B-**~"			'boot failed
+const PAT_THREE_BOTH=				"---------B-B-B--"		'boot completed
+const PAT_BOTH_OFF=					"-"						'starting setting initialization		
+const PAT_LONG_GREEN=				"GGGGGGGG-"				'settings initialized successfully
+const PAT_LONG_RED=					"RRRRRRRR-"				'settings failed to initialize
+const PAT_TWO_SHORT_RED=			"-----RRRRRR--R-R~"		'network interface error
+const PAT_BLINK_RED_SLOW=			"--RR"					'setting error (error_mode)
+const PAT_ONE_SHORT_GREEN=			"---------------G~"		'IP not configured (configuration in progress)
+const PAT_TWO_SHORT_GREEN=			"-------------G-G~"		'AggreGate connection idle
+const PAT_THREE_SHORT_GREEN=		"-----------G-G-G~"		'opening TCP link to AggreGate server
+const PAT_BLINK_GREEN=				"-G~"					'synching with AggreGate
+const PAT_GREEN_ON=					"G~"					'AggreGate link configured, sync completed
+const PAT_THREE_SHORT_RED=			"-----------R-R-R~"		'AggreGate link failed
+const PAT_BLINK_BOTH_IN_TURNS=		"RG~"					'Html login
+
+const BEEP_SHORT=					"BB"					'OK of some kind
+const BEEP_LONG=					"BBBBBB"				'ERROR of some kind
+const BEEP_VERY_SHORT="-B**"
+'----------------------------------------------------------------------------
+#if SUPPORTS_DISPLAY
+	const BG_BLUE=41736
+	const BG_GREEN=17704
+	const BG_RED=31
+	const BG_YELLOW=1631
+	const TXT_GRAY=46486
+
+	const SETTING_VAL_X=MENU_X
+	const SETTING_VAL_Y=MENU_H+MENU_Y-7
+	const SETTING_VAL_W=MENU_W
+	const SETTING_VAL_H=23
+
+	const KEY_F1=0
+	const KEY_F2=1
+	const KEY_F3=2
+	const KEY_F4=3
+
+	const EXIT_MENU = "Device will exit the programming mode now.`Continue?"
+	const INVALID_INPUT = "INTERNAL ERROR (invalid input type)"
+	const EMPTY_FOLDER = "This folder is empty"
+	const SYS_ERROR_REBOOT = "INTERNAL ERROR. Device will now reboot."
+	const COMMAND_ERROR_INIT = "Invalid data detected. You may have to reinitialize and/or restore from backup at least some of this device's data. Press OK to continue."
+	const COMMAND_SETTING_FAILURE="FATAL SYSTEM FAILURE:`Setting error.`The system is not function properly. Device initialization may help."
+	const COMMAND_REBOOT="Reboot the device?"
+	const COMMAND_LOGOUT="Are you sure you want to logout?"
+	const COMMAND_REBOOT_NOTICE="The device will reboot now."
+	const SYS_SETTING_VALUE_INVALID="Setting value is invalid."
+	const SYS_CALCULATE_WPA_KEY="The device is calculating the Wi-Fi security key. This is done in WPA-PSK and WPA2-PSK modes after the change of the access point name or password."
+
+	const ICON_FILE = "icon.bmp"
+
+	enum en_mb_keys
+		MBK_COMMAND_CONFIRM,
+		MBK_COMMAND_CANCEL,
+		MBK_YES,
+		MBK_NO,
+		MBK_OK,
+		MBK_F1,
+		MBK_F2,
+		MBK_F4
+	end enum
+
+	enum en_ib_mode
+		INPUT_BOX_ALPH_LOWER,
+		INPUT_BOX_ALPH_UPPER,
+		INPUT_BOX_NUMERIC
+	end enum
+	
+#endif
+
+enum en_param_we
+	WE_DISABLED,
+	WE_ENABLED_ONDEMAND,
+	WE_ENABLED_PERMANENT
+end enum
+
+enum en_param_ge
+	GE_DISABLED,
+	GE_ENABLED_ONDEMAND,
+	GE_ENABLED_PERMANENT
+end enum
+
+enum en_http_buff_allocate
+	HTTP_BUFF_ALLOCATE,
+	HTTP_BUFF_DISALLOCATE
+end enum
+
+enum en_device_rdwr
+	DEVICE_GET,
+	DEVICE_SET
+end enum
+
+enum en_network_states
+	NETWORK_INIT,
+	NETWORK_WLN_DISABLED,
+	NETWORK_WLN_JOINING,
+	NETWORK_WLN_JOINED,
+	NETWORK_WLN_FATAL_ERROR,
+	NETWORK_WLN_INVALID_WKEY,
+	NETWORK_WLN_SCANNING_FAIL,
+	NETWORK_WLN_ASSOCIATION_FAIL,
+	NETWORK_WLN_DISASSOCIATE,
+	NETWORK_DHCP_FIXED_IP,
+	NETWORK_DHCP_OBTAINING_IP,
+	NETWORK_DHCP_FAIL_OBTAINING_IP,
+	NETWORK_DHCP_IP_OBTAINED,
+	NETWORK_REPRINT_PREVIOUS_STATE 'this is not a state, it instructs device_print_network_info() to print previous state
+end enum
+
+'------------------------------------------------------------------------------
+declare led_pat_to_play,led_pat_to_play_prev as string(18)
+declare reboot_timer as byte
+
+#if SUPPORTS_AGG
+	declare param_ar as byte
+	declare owner_name_temp as string(32)
+	declare device_name_temp as string(32)
+	declare conn_p_modified as no_yes
+	declare server_ip_temp as string(15)
+	declare test_connection_retry as byte
+	declare agg_test_connection_timer as byte
+	#if USE_DNS
+		declare domain_name_temp as string(32)
+	#endif
+#endif	
+'------------------------------------------------------------------------------
+#if SUPPORTS_DISPLAY
+	declare lan_network_state as en_network_states
+	declare agg_cmd_received as no_yes
+	
+	declare sub print_wifi()
+	#if NET_AVAILABLE
+		declare sub print_lan_network_state(new_state as en_network_states)
+	#endif
+#endif
+
+'---------------------------------------------------------------------------------------------------
+#if WLN_AVAILABLE
+	const RSSI_UPDATE_TIMER_CTR=10
+	const WLN_RSSI_1=170
+	const WLN_RSSI_2=175
+	const WLN_RSSI_3=180
+	const WLN_RSSI_4=190
+	
+	declare wln_want_to_change_ap as no_yes
+	declare wln_rescanning as no_yes	
+	declare rssi_update_timer as byte
+
+	declare sub device_update_rssi()
+	
+	#if SUPPORTS_DISPLAY
+		declare wln_network_state as en_network_states	
+		declare sub print_wln_network_state(new_state as en_network_states)
+	#endif
+#endif
+
+#if USE_SNTP
+	declare param_te as byte
+	declare last_sntp_date as word
+	declare s_sock as byte
+#endif
+
+'------------------------------------------------------------------------------
+declare sub boot()
+declare function proc_device_op(byref param1 as string, byref param2 as string) as string(1)
+declare sub device_setting_set(sname as string(STG_MAX_SETTING_NAME_LEN), index as byte, byref s as string)
+declare function device_setting_check(byref setting_name as string,byref setting_val as string) as ok_ng
+declare function validate_ip(byref ip as string) as string
+declare function http_buff_rq(op as en_http_buff_allocate) as ok_ng
+declare sub device_process_esc_seq(byref s as string)
+declare function device_setting_init(init_mode as en_stg_init_modes) as ok_ng
+declare sub close_interface_sockets(interface as pl_sock_interfaces)
+declare sub change_current_interface(new_interface as pl_sock_interfaces)
+declare sub set_net_ip(interface as pl_sock_interfaces)
+declare function device_settings_sg(setting_name as string(5),index as byte, byref setting_val as string, byref stg_num as byte, rw as en_device_rdwr) as en_stg_status_codes
+
+#if NET_AVAILABLE
+	declare sub ethernet_link_state_change(new_state as pl_net_linkstate)
+#endif
+
+#if SIGNAL_STRENGTH_INDICATION=1
+	declare sub signal_strength_indication_init()
+	declare sub signal_strength_set(strength as byte)
+#endif
+
+#if DEV_DEBUG_PRINT
+	declare sub dev_debugprint(byref print_data as string)
+#endif
+
+
+#if SUPPORTS_DISPLAY
+	declare function device_mb_get_key(mk as en_mb_keys) as string
+	declare sub device_mb_interrupt()
+	declare sub device_ib_interrupt()
+	declare sub device_lb_interrupt()
+	declare sub device_tb_interrupt()
+	declare sub device_menu_interrupt()
+	declare sub device_move_cursor(menu_item as menu_display_item,desc_file as string(30))
+	declare sub device_menu_pre(
+		x_coord as word,	'x coordination
+		y_coord as word,	'y coordination
+		width as word,		'width of the menu in pixel
+		height as word,		'height of the menu in pixel
+		byref menu_states as string(MENU_MAX_LVL),	'allows user to start up the menu inside of selected sub-folders instead of root.  example: if menu_state = "23" then the menu will started at 2nd folder of menu lvl 1, 3rd folder of menu lvl 2. if menu_state = "" then menu started at root.
+		byref menu_descriptor_file as string(20),		'the descriptor file
+		access_level as byte, 		'access level of the user, only the menu item that is small or equal to access_level will show.
+		timeout as byte				'if no respond from the keypad within the time defined by "timeout", exit the menu and return to the previous screen. If timeout = 0, no time out applies
+		)
+	declare sub device_input_box_pre(
+		byref mask_str as string(IB_MAX_LEN),	'uneditable part of the input string
+		byref edit_str as string(IB_MAX_LEN),	'input string
+		char_range as input_box_char_ranges,	'the input range. INPUT_BOX_CHAR_RANGE_09 only allows numeric input, INPUT_BOX_CHAR_RANGE_AZ allows alphabetic, INPUT_BOX_CHAR_RANGE_09AZ allows both numeric and alphabetic input.
+		secret_mode as no_yes,			'if secret_mode = yes, all editable part of the input string will be display on the LCD as "*", this are mostly used for password.
+		insert_mode as no_yes,			'if insert_mode = yes, the new character is insert before the cursor, if insert_mode = no, the character replaces the character at the cursor position.
+		byref initial_pos as byte,			'initial cursor position
+		timeout as byte,				'if no keypad activity for the amount of time defined by timeout, input box is automatically closed and return to previous screen.
+		input_length as byte			'the maximum number of characters
+	)
+	declare sub device_list_box_pre(
+		x_coord as word,		'x coordination
+		y_coord as word,		'y coordination
+		list_width as word,		'list box width
+		list_height as word,	'list box height
+		byref listbox_data as string,		'values and display strings of all list box items
+		byref listbox_state as string(10),	'the value of selected list box item 
+		timeout as byte						'if no respond from the keypad within the time defined by "timeout", exit the list box and return to the previous screen. If timeout = 0, no time out applies
+		)
+	declare sub device_msg_box_pre(
+		byref msg as string(160), 			'message to be displayed in the Message Box
+		x as word, 							'x coordination
+		y as word, 							'y coordination
+		w as word, 							'width of the msgbox
+		h as word, 							'height of the msgbox
+		align as pl_lcd_text_alignment, 	'alignment of the text in the msgbox
+		byref keycode_str as string(20),	'this string contains the characters which ASCII is correspond to the keycode of keys on the keypad that msgbox responds to 
+		bolder as no_yes, 					'if the msgbox is wrap with a visible bolder line
+		timeout as byte						'if no respond from the keypad within the time defined by "timeout", exit the msgbox and return to the previous screen. If timeout = 0, no time out applies
+		)
+	declare sub device_menu_post(
+		x_coord as word,	'x coordination
+		y_coord as word,	'y coordination
+		width as word,		'width of the menu in pixel
+		height as word,		'height of the menu in pixel
+		byref menu_states as string(MENU_MAX_LVL),	'allows user to start up the menu inside of selected sub-folders instead of root.  example: if menu_state = "23" then the menu will started at 2nd folder of menu lvl 1, 3rd folder of menu lvl 2. if menu_state = "" then menu started at root.
+		byref menu_descriptor_file as string(20),		'the descriptor file
+		access_level as byte, 		'access level of the user, only the menu item that is small or equal to access_level will show.
+		timeout as byte				'if no respond from the keypad within the time defined by "timeout", exit the menu and return to the previous screen. If timeout = 0, no time out applies
+		)
+	declare sub device_input_box_post(
+		byref mask_str as string(IB_MAX_LEN),	'uneditable part of the input string
+		byref edit_str as string(IB_MAX_LEN),	'input string
+		char_range as input_box_char_ranges,	'the input range. INPUT_BOX_CHAR_RANGE_09 only allows numeric input, INPUT_BOX_CHAR_RANGE_AZ allows alphabetic, INPUT_BOX_CHAR_RANGE_09AZ allows both numeric and alphabetic input.
+		secret_mode as no_yes,			'if secret_mode = yes, all editable part of the input string will be display on the LCD as "*", this are mostly used for password.
+		insert_mode as no_yes,			'if insert_mode = yes, the new character is insert before the cursor, if insert_mode = no, the character replaces the character at the cursor position.
+		byref initial_pos as byte,			'initial cursor position
+		timeout as byte,				'if no keypad activity for the amount of time defined by timeout, input box is automatically closed and return to previous screen.
+		input_length as byte			'the maximum number of characters
+	)
+	declare sub device_list_box_post(
+		x_coord as word,		'x coordination
+		y_coord as word,		'y coordination
+		list_width as word,		'list box width
+		list_height as word,	'list box height
+		byref listbox_data as string,		'values and display strings of all list box items
+		byref listbox_state as string(10),	'the value of selected list box item
+		byref disable_print as no_yes,
+		timeout as byte						'if no respond from the keypad within the time defined by "timeout", exit the list box and return to the previous screen. If timeout = 0, no time out applies
+		)
+	declare sub device_msg_box_post(
+		byref msg as string(60), 			'message to be displayed in the Message Box
+		x as word, 							'x coordination
+		y as word, 							'y coordination
+		w as word, 							'width of the msgbox
+		h as word, 							'height of the msgbox
+		align as pl_lcd_text_alignment, 	'alignment of the text in the msgbox
+		byref keycode_str as string(20),	'this string contains the characters which ASCII is correspond to the keycode of keys on the keypad that msgbox responds to 
+		bolder as no_yes, 					'if the msgbox is wrap with a visible bolder line
+		timeout as byte						'if no respond from the keypad within the time defined by "timeout", exit the msgbox and return to the previous screen. If timeout = 0, no time out applies
+		)
+		
+	declare sub device_ib_timer_event(byref current_state as input_box_key_actions,byref key_asc as byte,byref insert_mode as no_yes)
+	declare	sub lcd_clear(x as word, y as word, width as word, height as word)
+	declare sub lcd_print_msg(byref msg as string,x as word, y as word, w as word, h as word,al as pl_lcd_text_alignment, bolder as no_yes)
+	declare sub reset_keypad()
+
+	declare sub device_menu_key_proc(key_event as pl_kp_event_codes, key_code as byte, byref current_state as menu_key_actions)
+	declare sub device_number_key_action(led_key as word,upper_asc as byte,lower_asc as byte, number_asc as byte, byref current_state as input_box_key_actions, byref key_asc as byte, byref insert_mode as no_yes)
+	declare sub device_ib_key_proc(key_event as pl_kp_event_codes, key_code as byte, byref current_state as input_box_key_actions, byref key_asc as byte, byref insert_mode as no_yes)
+	declare sub device_lb_key_proc(key_event as pl_kp_event_codes, key_code as byte, byref current_state as list_box_key_action)
+	declare sub device_mb_key_proc(key_event as pl_kp_event_codes, key_code as byte)
+	declare sub set_stg_modified()
+
+#endif

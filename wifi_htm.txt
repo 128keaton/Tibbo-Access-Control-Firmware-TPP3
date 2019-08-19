@@ -1,0 +1,8 @@
+>>WE	Wi-Fi mode						B,L,0-Disabled;1-Enabled (on demand);2-Enabled (permanently);	^
+>>WD	DHCP							B,L,0-Disabled;1-Enabled;	^
+>>WI	IP-address						S,I,15	^	
+>>WG	Gateway IP						S,I,15	^
+>>WN	Subnet mask							S,I,15	^
+>>WA	Access point (SSID)				S,I,22	^
+>>WS	AP security mode				B,L,0-Disabled;1-WEP64;2-WEP128;3-WPA-PSK (TKIP);4-WPA2-PSK (AES);	^
+>>WP	AP password						S,I,26	^

@@ -1,0 +1,438 @@
+include "global.tbh"
+
+#if SUPPORTS_DISPLAY
+	const IO_WIDTH=15
+	declare sub lcd_init()
+	declare sub print_main_screen()
+
+#endif
+'====================================================================
+public sub boot()
+	dim s as string
+	dim f as byte
+	dim dhcp_used as no_yes
+	#if WLN_AVAILABLE
+		dim wln_result as en_wln_status_codes
+	#endif 
+	
+	io.num=RED_IO_NUM_1
+	io.enabled=YES
+	
+	io.num=GREEN_IO_NUM_1
+	io.enabled=YES
+	
+	dhcp_used=NO
+	reboot_flag=NO
+	reboot_timer=0
+	agg_port_fallback_count=AGG_PORT_FALLBACK_MAX
+
+	'indicate that we are starting the boot
+	pat.channel=0
+	pat.play(PAT_BOTH_LOOP,PL_PAT_CANINT)
+	
+	#if SUPPORTS_DISPLAY
+		lcd_init()
+		lcd_clear(0,0,lcd.width,lcd.height)
+		lan_network_state=255
+	#endif
+	
+	if stg_start()<>EN_STG_STATUS_OK then
+		pat.play(PAT_BLINK_BOTH_TOGETHER_FAST,PL_PAT_NOINT)
+		exit sub
+	else
+		if stg_check_all(s)<>EN_STG_STATUS_OK then
+			device_setting_init(EN_STG_INIT_MODE_OVERRIDE)
+			sys.reboot
+		end if
+	end if
+	
+	#if SUPPORTS_DS
+		error_mode=NO
+	#endif
+	
+	if stg_check_all(s)<>EN_STG_STATUS_OK then
+		if device_setting_init(EN_STG_INIT_MODE_NORMAL)<>ok then
+			#if SUPPORTS_DS
+				declare_error_mode()
+			#endif
+		end if
+	end if
+
+	#if	SUPPORTS_TABLE
+		if tbl_start()<>EN_TBL_STATUS_OK then
+			fd.formatj(fd.availableflashspace-100,16,100)
+			#if SUPPORTS_DS
+				declare_error_mode()
+			#endif
+		end if
+	#endif
+
+	#if SUPPORT_HTML
+		html_session_init()
+	#endif
+	
+	#if USE_SNTP
+		'sntp
+		param_te=stg_get("TE",0)
+		if param_te=1 then
+			last_sntp_date=65535
+			s_sock=sock_get("SNTP")
+			sntp_init()
+		end if
+	#endif
+	
+	'aggregate
+	#if SUPPORTS_AGG
+		param_ar=val(stg_get("AR",0))
+		test_connection_retry=0
+		agg_test_connection_timer=0	
+		conn_p_modified=NO
+		owner_name_temp=stg_get("ON",0)
+		device_name_temp=stg_get("DN",0)
+		server_ip_temp=stg_get("TI",0)
+		#if USE_DNS
+			domain_name_temp=stg_get("TN",0)
+		#endif
+	#endif
+	
+	#if USE_SNTP	
+		if param_ar=1 and param_te=1 then
+			'disable time server if aggregate is enabled
+			param_te=0
+		end if
+	#endif
+	
+	#if SUPPORTS_GPRS
+		param_ge=stg_get("GE",0)
+
+	#endif
+	
+	#if NET_AVAILABLE
+		if net.linkstate<>PL_NET_LINKSTAT_NOLINK then
+			#if DEV_DEBUG_PRINT
+				dev_debugprint("Set current interface to Ethernet")
+			#endif
+			interface_ready(PL_SOCK_INTERFACE_NET)=YES
+			current_interface=PL_SOCK_INTERFACE_NET
+		end if
+		
+		current_interface=PL_SOCK_INTERFACE_NET
+		'net. parameters and DHCP
+		param_dh=val(stg_get("DH",0))
+		set_net_ip(PL_SOCK_INTERFACE_NET)
+		if param_dh<>NO then
+			ip_configured(PL_SOCK_INTERFACE_NET)=NO
+			dhcp_start(PL_SOCK_INTERFACE_NET,net.ip,"")
+			dhcp_used=YES
+		else
+			#if SUPPORTS_DS
+				declare_ip_set(PL_SOCK_INTERFACE_NET)
+			#endif
+			ip_configured(PL_SOCK_INTERFACE_NET)=YES
+		end if
+	#endif
+	
+	#if WLN_AVAILABLE
+		'Wi-Fi parameters and DHCP
+		wln_error=NO
+		param_we=stg_get("WE",0)
+		set_net_ip(PL_SOCK_INTERFACE_WLN)
+		
+		#if SUPPORTS_DISPLAY
+			wln_network_state=255
+		#endif
+		
+		rssi_update_timer=RSSI_UPDATE_TIMER_CTR		
+		
+		if param_we<>WE_DISABLED then
+			num_wln_failures=0
+			param_wd=val(stg_get("WD",0))
+			if param_wd<>NO then
+				ip_configured(PL_SOCK_INTERFACE_WLN)=NO
+				dhcp_start(PL_SOCK_INTERFACE_WLN,wln.ip,"")
+				dhcp_used=YES
+			else
+				ip_configured(PL_SOCK_INTERFACE_WLN)=YES
+				#if SUPPORTS_DS
+					declare_ip_set(PL_SOCK_INTERFACE_WLN)
+				#endif
+			end if
+			param_wa=stg_get("WA",0)
+			param_ws=val(stg_get("WS",0))
+
+			select case param_ws
+			case WLN_SECURITY_MODE_DISABLED:
+				wln_password=""
+			case WLN_SECURITY_MODE_WEP64,WLN_SECURITY_MODE_WEP128:
+				wln_password=stg_get("WP",0)
+		#if WLN_WPA	
+			case else:
+				if param_ws=stg_get("wS",0) and param_wa=stg_get("wA",0) and stg_get("WP",0)=stg_get("wP",0) and stg_sg("WK",0,wln_password,EN_STG_GET)=EN_STG_STATUS_OK and len(wln_password)=32 then
+				else
+				#if SUPPORTS_DISPLAY
+					'turn on backlight
+					io.num=PL_IO_NUM_54 
+					io.state=LOW
+					lcd_clear(0,0,lcd.width,lcd.height)
+					romfile.open(LCD_STD_FONT)
+					lcd.setfont(romfile.offset)	
+					lcd.textverticalspacing=2
+					lcd.texthorizontalspacing=2
+					lcd_print_msg(SYS_CALCULATE_WPA_KEY,0,0,lcd.width,lcd.height-lcd.fontheight*2,PL_LCD_TEXT_ALIGNMENT_MIDDLE_CENTER,no)
+				#endif	
+					wln_password=wln_wpa_mkey_get(stg_get("WP",0),stg_get("WA",0))
+					stg_set("WK",0,wln_password)
+					stg_set("wS",0,str(param_ws))
+					stg_set("wA",0,param_wa)
+					stg_set("wP",0,stg_get("WP",0))
+				end if
+		#endif	
+			end select
+			
+			if param_we=WE_ENABLED_PERMANENT then
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("Start Wi-Fi")
+				#endif
+				
+				wln_result=wln_start(param_wa,param_ws,wln_password,PL_WLN_DOMAIN_FCC,no,PL_WLN_ASCAN_INFRASTRUCTURE)
+				
+				if wln_result<>WLN_STATUS_OK then
+					#if DEV_DEBUG_PRINT
+						dev_debugprint("Wi-Fi MALFUNCTIONED (could not start)")
+					#endif
+					wln_error=YES
+				end if
+				wln_already_started=YES
+				
+				#if SUPPORTS_DISPLAY
+					select case wln_result
+					case WLN_STATUS_OK:
+						wln_network_state=NETWORK_WLN_JOINING
+						
+					case WLN_STATUS_INVALID_WEP_KEY:
+						wln_network_state=NETWORK_WLN_INVALID_WKEY
+					
+					case else:
+						wln_network_state=NETWORK_WLN_FATAL_ERROR
+
+					end select
+				#endif
+			else
+				wln_stop()
+				wln_already_started=NO
+				
+				#if SUPPORTS_DISPLAY
+					print_wln_network_state(NETWORK_WLN_DISABLED)
+				#endif
+			end if
+		end if
+	#else
+		wln_error=NO
+	#endif
+	
+	'GPRS parameters
+	#if SUPPORTS_GPRS
+		gprs_error=NO
+		if param_ge<>GE_DISABLED then
+			param_ga=stg_get("GA",0)
+			param_gn=stg_get("GN",0)
+			param_gu=stg_get("GU",0)
+			param_gp=stg_get("GP",0)			
+			if param_ge=GE_ENABLED_PERMANENT then
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("Start GPRS")
+				#endif
+				if gprs_start(param_ga,param_gn,param_gu,param_gp)<>GPRS_STATUS_OK then
+					#if DEV_DEBUG_PRINT
+						dev_debugprint("GPRS MALFUNCTIONED (could not start)")
+					#endif
+					gprs_error=YES
+				end if
+				gprs_already_started=YES
+			else
+				gprs_already_started=NO
+			end if
+		end if
+
+	#endif
+	
+	#if SIGNAL_STRENGTH_INDICATION
+		signal_strength_indication_init()
+	#endif
+	
+	#if SUPPORT_HTML
+		'HTTP sockets
+		for f=0 to NUM_HTTP_SOCKETS-1
+			sock_http(f)=sock_get("HTTP")
+			sock.num=sock_http(f)
+			sock.protocol=PL_SOCK_PROTOCOL_TCP
+			sock.httpportlist="80"
+			sock.connectiontout=600
+			sock.allowedinterfaces="NET,WLN,PPP"
+			sock.inconmode=PL_SOCK_INCONMODE_ANY_IP_ANY_PORT
+			sock.reconmode= PL_SOCK_RECONMODE_0
+		next f
+		
+		if http_buff_rq(HTTP_BUFF_ALLOCATE)<>OK then
+			'insufficient memory
+		end if
+	#endif 
+	
+	'net_cmd
+	#if SUPPORTS_DS
+		net_cmd_init()
+		init_x_flags()
+	#endif
+
+
+	#if USE_DNS
+		sock_dns=sock_get("DNS")
+		dns_start(sock_dns)
+		server_ip_obtain=NO
+	#endif	
+	
+	#if SUPPORTS_DISPLAY
+
+		io_index=0
+		kp_init()
+		lcd.forecolor=LCD_FORECOLOR
+		lcd.backcolor=LCD_BACKCOLOR
+		lcd_clear(0,0,lcd.width,lcd.height)		
+'		print_main_screen()
+		print_time()
+		print_wifi()
+		
+		#if NET_AVAILABLE
+			if param_dh=NO then
+'				print_lan_network_state(NETWORK_DHCP_FIXED_IP)
+			end if
+		#endif
+		
+		#if WLN_AVAILABLE
+			if param_we=WE_DISABLED then
+				print_wln_network_state(NETWORK_WLN_DISABLED)
+			end if
+		#endif
+		'turn on backlight
+		io.num=PL_IO_NUM_54 
+		io.state=LOW
+		
+	#endif	
+	
+	'indicate that the boot is completed
+	pat.channel=0
+	pat.play(PAT_THREE_BOTH,PL_PAT_CANINT)
+	#if BEEP_AVAILABLE
+		beep.divider=BEEP_DIVIDER
+		beep.play(BEEP_SHORT,PL_BEEP_CANINT)
+	#endif
+
+end sub
+
+#if SUPPORTS_DISPLAY
+'------------------------------------------------------------------------------
+sub lcd_init()
+	'----- INIT LCD -----
+	
+	lcd.width=320
+	lcd.height=240
+	
+	'RST
+	io.num=PL_IO_NUM_55
+	io.enabled=YES
+
+	'DC
+	io.num=PL_IO_NUM_43
+	io.enabled=YES
+
+	'WR
+	io.num=PL_IO_NUM_42
+	io.enabled=YES
+
+	'RD
+	io.num=PL_IO_NUM_41
+	io.enabled=YES
+
+	'CS
+	io.num=PL_IO_NUM_40
+	io.enabled=YES
+
+	lcd.iomapping="55,43,42,41,40,0" 'RST,DC,WR,RD,CS,data_bus
+	lcd.rotated=YES 'yes, the LCD is installed up side down
+	lcd.enabled=YES
+
+	'backlight OFF
+	io.num=PL_IO_NUM_54 
+	io.enabled=YES
+	io.state=HIGH
+end sub
+
+'------------------------------------------------------------------------------
+sub kp_init()
+	'----- KEYPAD -----
+	
+	kp.returnlinesmapping="36,37,38,39"
+	kp.enabled=YES
+end sub
+
+'------------------------------------------------------------------------------
+public sub print_main_screen()
+	dim s as string
+	
+	if enter_menu=YES then exit sub
+	
+	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_MIDDLE_CENTER
+	romfile.open(LCD_STD_FONT)
+	lcd.setfont(romfile.offset)	
+	lcd.textverticalspacing=2
+	lcd.texthorizontalspacing=2
+	
+	lcd.forecolor=BG_BLUE
+	lcd.fill(0,63,lcd.width,lcd.height-150)
+
+	lcd.forecolor=LCD_FORECOLOR
+	lcd.backcolor=BG_BLUE
+	
+	#if NET_AVAILABLE
+		print_lan_network_state(NETWORK_INIT)
+	#endif
+	
+	#if WLN_AVAILABLE
+		print_wln_network_state(NETWORK_INIT)
+	#endif
+	
+	s="Enter Menu >>"
+	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_BOTTOM_RIGHT
+	
+	lcd.printaligned(s, 0,124,lcd.width,28)
+
+end sub
+
+'------------------------------------------------------------------------------
+public sub print_time()
+	dim s1,s2 as string(32)
+	dim b1 as byte
+	
+	if enter_menu=YES then exit sub
+		
+	lcd.textalignment=PL_LCD_TEXT_ALIGNMENT_TOP_LEFT
+	romfile.open(SMALL_FONT)
+	lcd.setfont(romfile.offset)	
+	lcd.textverticalspacing=1
+	lcd.texthorizontalspacing=1
+	lcd.forecolor=LCD_FORECOLOR
+	lcd.backcolor=LCD_BACKCOLOR
+	
+	device_settings_sg("TD",0,s1,b1,DEVICE_GET)
+	device_settings_sg("TT",0,s2,b1,DEVICE_GET)
+	
+	lcd.printaligned(s1,1,1,60,10)
+	lcd.printaligned(s2,1,10,60,10)
+	
+	display_time(left(s2, 5))
+	display_date(s1)
+	ta_button_shedule(s2)
+
+end sub
+
+#endif

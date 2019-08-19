@@ -1,0 +1,26 @@
+
+const SESSION_LEN = 5
+
+'------------------------------------------------------------------------------
+enum html_login_messages
+	HLM_NONE,
+	HLM_LOGGED_OUT,
+	HLM_INVALID_PASSWORD,
+	HLM_INVALID_SESSION,
+	HLM_PRIORITY_REJECTED,
+	HLM_NOT_LOGGED_IN
+end enum
+
+'------------------------------------------------------------------------------
+declare html_login_message as html_login_messages
+
+'------------------------------------------------------------------------------
+declare sub html_session_init()
+declare sub print_login_state()
+declare sub html_login()
+declare function html_login_verify(print_redir as no_yes, refresh_timeout as no_yes) as ok_ng
+declare function password_verify() as ok_ng
+declare sub html_print_session() 
+
+declare sub callback_html_session_login()
+

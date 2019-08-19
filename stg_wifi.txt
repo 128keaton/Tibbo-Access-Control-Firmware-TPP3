@@ -1,0 +1,87 @@
+>>DH	E	B	1	0	1	I	0	Ethernet DHCP
+>>IP	E	D	1	4	4	I	192.168.1.40	Ethernet IP
+>>GI	E	D	1	4	4	I	192.168.1.1	Ethernet Gateway IP
+>>NM	E	D	1	4	4	I	255.255.255.0	Ethernet Netmask
+>>WE	E	B	1	0	2	I	0	Wi-Fi mode
+>>WD	E	B	1	0	1	I	0	Wi-Fi DHCP
+>>WI	E	D	1	4	4	I	192.168.1.41	Wi-Fi IP
+>>WG	E	D	1	4	4	I	192.168.1.1	Wi-Fi Gateway IP
+>>WN	E	D	1	4	4	I	255.255.255.0	Wi-Fi Netmask
+>>WA	E	S	1	0	22	I	^	W-Fi Access Point (AP) Name (SSID)
+>>WS	E	B	1	0	4	I	0	AP Security Mode
+>>WP	E	S	1	0	26	I	^	AP Password
+>>WK	E	S	1	0	32	I	^	AP Security Key (internal setting)
+>>wA	E	S	1	0	22	I	^	Previous AP Name (internal setting)
+>>wS	E	B	1	0	4	I	0	Previous AP Security Mode (internal setting)
+>>wP	E	S	1	0	26	I	^	Previous AP password (internal setting)
+>>AR	E	B	1	0	1	I	0	AggreGate Mode
+>>ON	E	S	1	0	32	I	^	AggreGate Owner Name
+>>DN	E	S	1	0	32	I	^	AggreGate Device Name
+>>TN	E	S	1	0	32	I	^	AggreGate Server Domain Name
+>>TI	E	D	1	4	4	I	1.0.0.1	AggreGate Server IP
+>>TP	E	W	1	0	65535	I	6480	AggeGate Server Port
+>>CT	E	B	1	0	99	I	5	AggreGate Connection Timeout
+>>PW	E	S	1	0	6	I	^	Password
+>>SE	E	B	4	0	1	A	0	Serial enabled
+>>FC	E	B	4	0	1	A	0	Flow control
+>>BR	E	B	4	0	13	A	5	Serial baudrate
+>>PR	E	B	4	0	4	A	0	Serial parity
+>>BB	E	B	4	0	1	A	1	Serial bits
+>>TE	E	B	1	0	1	A	0	SNTP enbled
+>>TS	E	D	1	4	4	A	220.130.158.71	SNTP server ip
+>>TZ	E	B	1	0	34	A	0	timezone
+>>DS	E	B	1	0	1	A	0	daylight saving
+>>I0	R	B	2	0	1	A	0	IO states
+>>I1	R	B	2	0	1	A	0	IO states
+>>I2	R	B	2	0	1	A	0	IO states
+>>I3	R	B	2	0	1	A	0	IO states
+>>I4	R	B	2	0	1	A	0	IO states
+>>I5	R	B	2	0	1	A	0	IO states
+>>I6	R	B	2	0	1	A	0	IO states
+>>I7	R	B	2	0	1	A	0	IO states
+>>I8	R	B	2	0	1	A	0	IO states
+>>I9	R	B	2	0	1	A	0	IO states
+>>I10	R	B	2	0	1	A	0	IO states
+>>I11	R	B	2	0	1	A	0	IO states
+>>I12	R	B	2	0	1	A	0	IO states
+>>I13	R	B	2	0	1	A	0	IO states
+>>I14	R	B	2	0	1	A	0	IO states
+>>I15	R	B	2	0	1	A	0	IO states
+>>I16	R	B	2	0	1	A	0	IO states
+>>I17	R	B	2	0	1	A	0	IO states
+>>I18	R	B	2	0	1	A	0	IO states
+>>I19	R	B	2	0	1	A	0	IO states
+>>I20	R	B	2	0	1	A	0	IO states
+>>I21	R	B	2	0	1	A	0	IO states
+>>I22	R	B	2	0	1	A	0	IO states
+>>I23	R	B	2	0	1	A	0	IO states
+>>I24	R	B	2	0	1	A	0	IO states
+>>I25	R	B	2	0	1	A	0	IO states
+>>I26	R	B	2	0	1	A	0	IO states
+>>I27	R	B	2	0	1	A	0	IO states
+>>I28	R	B	2	0	1	A	0	IO states
+>>I29	R	B	2	0	1	A	0	IO states
+>>I30	R	B	2	0	1	A	0	IO states
+>>I31	R	B	2	0	1	A	0	IO states
+>>I32	R	B	2	0	1	A	0	IO states
+>>I33	R	B	2	0	1	A	0	IO states
+>>I34	R	B	2	0	1	A	0	IO states
+>>I35	R	B	2	0	1	A	0	IO states
+>>I36	R	B	2	0	1	A	0	IO states
+>>I37	R	B	2	0	1	A	0	IO states
+>>I38	R	B	2	0	1	A	0	IO states
+>>I39	R	B	2	0	1	A	0	IO states
+>>I40	R	B	2	0	1	A	0	IO states
+>>I41	R	B	2	0	1	A	0	IO states
+>>I42	R	B	2	0	1	A	0	IO states
+>>I43	R	B	2	0	1	A	0	IO states
+>>I44	R	B	2	0	1	A	0	IO states
+>>I45	R	B	2	0	1	A	0	IO states
+>>I46	R	B	2	0	1	A	0	IO states
+
+#define STG_DESCRIPTOR_FILE "stg_wifi.txt"
+#define STG_TIMESTAMP 1
+#define STG_MAX_NUM_SETTINGS 80
+#define STG_RAM_ARRAY_SIZE 470
+#define STG_MAX_SETTING_NAME_LEN 3
+#define STG_MAX_SETTING_VALUE_LEN 32

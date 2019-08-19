@@ -1,0 +1,50 @@
+Acc	Men	Item	Item				Item
+lvl	lvl	type	String				Data
+
+>>0	0	N	Password					S,I,PW,,B,6,N
+>>0	0	F	Ethernet...				^
+>>0	1	N	DHCP					S,L,DH,0-Disabled;1-Enabled;
+>>0	1	N	IP-address				S,I,IP,   .   .   .   ,D,12,N
+>>0	1	N	Gateway IP				S,I,GI,   .   .   .   ,D,12,N
+>>0	1	N	Subnet mask					S,I,NM,   .   .   .   ,D,12,N
+>>0	0	F	Wi-Fi...				^
+>>0	1	N	Wi-Fi mode			S,L,WE,0-Disabled;1-Enabled (on demand);2-Enabled (permanently);
+>>0	1	N	DHCP					S,L,WD,0-Disabled;1-Enabled;
+>>0	1	N	IP-address				S,I,WI,   .   .   .   ,D,12,N
+>>0	1	N	Gateway IP				S,I,WG,   .   .   .   ,D,12,N
+>>0	1	N	Subnet mask					S,I,WN,   .   .   .   ,D,12,N
+>>0	1	N	Access point (SSID)		S,I,WA,,B,22,N
+>>0	1	N	AP security mode			S,L,WS,0-Disabled;1-WEP64;2-WEP128;3-WPA-PSK (TKIP);4-WPA2-PSK (AES);
+>>0	1	N	AP password				S,I,WP,,B,26,Y
+>>0	0	F	AggreGate...				^
+>>0	1	N	Server connection		S,L,AR,0-Disabled;1-Enabled;
+>>0	1	N	Owner name				S,I,ON,,B,32,N
+>>0	1	N	Device name 			S,I,DN,,B,32,N
+>>0	1	N	Server IP				S,I,TI,,D,15,N
+>>0	1	N	Server port			S,I,TP,,D,5,N
+>>0	1	N	Connection timeout 	S,I,CT,,D,3,N
+>>0	1	N	Event Generator		S,L,EG,0-Disable;1-Enable;
+>>0	0	F	Sntp...				^
+>>0	1	N	Enable/disable				S,L,TE,0-Disabled;1-Enabled;
+>>0	1	N	Time server IP						S,I,TS,   .   .   .   ,D,12,N
+>>0	1	N	Time zone							S,L,TZ,0--12;1--11;2--10;3--9;4--8;5--7;6--6;7--5;8--4:30;9--4;10--3;11--3:30;12--2;13--1;14-0;15-+1;16-+2;17-+3;18-+3:30;19-+4;20-+4:30;21-+5;22-+5:30;23-+5:45;24-+6;25-+6:30;26-+7;27-+8;28-+9;29-+9:30;30-+10;31-+11;32-+12;33-+13;
+>>0	1	N	Daylight saving time				S,L,DS,0-Off;1-On;
+>>0	1	N	Date (dd/mm/yyyy)				S,I,TD,    -  -  ,D,8,N
+>>0	1	N	Time (hh:mm)				S,I,TT,  :  :  ,D,6,N
+>>0	0	F	Access Control...				^
+>>0	1	N	Controller Mode				S,L,CM,0-Access Control;1-Time Recorder;
+>>0	1	F	Buttons...			^
+>>0	2	N	Clock in				S,L,B1,0-Disabled;1-Enabled;
+>>0	2	N	Clock out				S,L,B2,0-Disabled;1-Enabled;
+>>0	2	N	Temp in					S,L,B3,0-Disabled;1-Enabled;
+>>0	2	N	Temp out				S,L,B4,0-Disabled;1-Enabled;
+>>0	2	N	Button Sch.				S,L,AB,0-Disabled;1-Enabled;
+>>0	2	N	Edit B/S				S,T,AU_BUT,I,time,  :  ,D,4,N,L,act,0-Switch C. IN;1-Switch C. OUT;2-Switch T. IN;3-Switch T. OUT;4-C. IN(Dis.);5-C. IN(En.);6-C. OUT(Dis.);7-C. OUT(En.);8-T. IN(Dis.);9-T. IN(En.);9-T. OUT(Dis.);10-T. OUT(En.)
+>>0	2	N	Clear B/S				C,B
+>>0	1	F	RFID...					^
+>>0	2	N	ID conversion			S,L,RHC,0-HEX;1-DEC;
+>>0	2	N	ID length				S,I,RHL,,D,2,N
+>>0	2	N	ID position offset			S,I,POS,,D,2,N
+>>0	2	N	Code length 			S,I,RFC,,D,2,N
+>>1	0	N	Initialize				C,I	^
+

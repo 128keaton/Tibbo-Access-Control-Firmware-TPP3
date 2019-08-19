@@ -1,0 +1,288 @@
+include "global.tbh"
+
+'------------------------------------------------------------------------------
+public dim html_channel_index as byte
+dim it_was_save as no_yes
+dim html_setting_status(MAX_HTML_NUM_SETTINGS) as en_stg_status_codes
+
+public sub html_print_setting(byref html_descr_file as string)
+'Read the html_descr_file and print the settings that is in the file. 
+	dim i as word
+	dim setting_val, setting_str as string(50)
+	dim setting_name as string(8)
+	dim setting_input_len as string(8)
+	dim setting_input_type as string(1)
+	dim setting_unit as string(12)
+	dim s,setting_option as string
+	dim pos1, pos2, pos3, stg_num as byte
+	dim tab_index as byte
+	
+	romfile.open(html_descr_file)
+	i=romfile.find(romfile.pointer,">>",1)
+	tab_index=2
+	while i<>0
+		'doevents
+		setting_input_type=""
+		setting_name=""
+		setting_val=""
+		setting_str=""
+		setting_option=""
+		setting_unit=""
+		romfile.pointer=i+2
+			
+		do												'get the setting name (the setting name that is used in the settings file)
+			i=romfile.find(romfile.pointer,chr(TAB),1) 
+			if i=0 then exit sub
+			s=romfile.getdata(i-romfile.pointer)
+			romfile.pointer=i+1
+		loop while s=""
+		setting_name=s 		
+		do												'get the setting string (the string that is printed on the html page as setting name)
+			i=romfile.find(romfile.pointer,chr(TAB),1) 
+			if i=0 then exit sub
+			s=romfile.getdata(i-romfile.pointer)
+			romfile.pointer=i+1
+		loop while s="" 
+		setting_str=s		
+		do												'get the setting data, setting_input_type, I:input box, L:list box, A:input label, B: list label
+			i=romfile.find(romfile.pointer,chr(TAB),1) 
+			if i=0 then exit sub
+			s=romfile.getdata(i-romfile.pointer)
+			romfile.pointer=i+1
+		loop while s=""
+		pos1=instr(1,s,CHR(44),1)
+		pos2=instr(1,s,CHR(44),2)
+		pos3=instr(1,s,CHR(44),3)
+		
+		setting_input_type=mid(s,pos1+1,1)			'if input type is list box(L) or list label(B), then setting data also contain the options for the list box
+
+		if setting_input_type="L" or setting_input_type="B" then
+			if pos3> 0 then
+				setting_option=mid(s,pos2+1,pos3-pos2-1)
+			else
+				setting_option=mid(s,pos2+1,len(s)-pos2)
+			end if
+		end if										'if input type is input box(I) or input label(A), then setting data also contain the maximum input length
+		
+		if setting_input_type="I" or setting_input_type="T" or setting_input_type="D" then
+			if pos3> 0 then
+				setting_input_len=mid(s,pos2+1,pos3-pos2-1)
+			else
+				setting_input_len=mid(s,pos2+1,len(s)-pos2)
+			end if
+		end if
+		
+		if pos3>0 then
+			setting_unit=mid(s,pos3+1,len(s)-pos3)
+		end if
+				
+		sock_setsend("<tr><td width=80%><table width = 100% border = '1'><tr><td width=66%>")
+		
+		'using the setting name to find the actual values
+		stg_num=stg_find(setting_name)
+		if stg_num=0 then  'not found in the setting list
+			device_settings_sg(setting_name,html_channel_index,setting_val,stg_num,EN_STG_GET)
+		else
+			if it_was_save=NO then
+
+				html_setting_status(stg_num-1)=stg_sg(setting_name,html_channel_index,setting_val,EN_STG_GET)
+				callback_html_stg_mod_sg(setting_name,html_channel_index,setting_val,EN_STG_GET)
+			else
+				stg_sg(setting_name,html_channel_index,setting_val,EN_STG_GET)		
+				callback_html_stg_mod_sg(setting_name,html_channel_index,setting_val,EN_STG_GET)
+			end if
+		end if
+		
+		tab_index=tab_index+1
+		device_process_esc_seq(setting_str)
+		sock_setsend(setting_str)
+		sock_setsend("</td>")
+
+		sock_setsend("<td width=34%>")
+		
+		if pos3>0 then
+			sock_setsend("<table width=100%><tr><td align='left'>")
+		end if
+		
+		select case setting_input_type
+		case "L":
+			sock_setsend("<select name=\x22"+setting_name+"\x22 size =1 STYLE='width: 100%' tabindex ='"+str(tab_index)+"'>")
+			pos1=1
+			pos2=instr(1,setting_option,";",1)
+			
+			while pos2<>0
+				s=mid(setting_option,pos1,pos2-pos1)
+				sock_setsend("<option ")
+				pos1=instr(1,s,"-",1)
+				if left(s,pos1-1)=setting_val then
+					sock_setsend("selected=\x22selected\x22 ")
+				end if
+				sock_setsend("value=\x22"+left(s,pos1-1)+"\x22>"+mid(s,pos1+1,len(s)-pos1)+"</option>")
+				pos1=pos2+1
+				pos2=instr(pos1,setting_option,";",1)
+			wend	
+			sock_setsend("</select>")
+			
+		case "I":
+			sock_setsend("<input type=\x22text\x22 name=\x22"+setting_name+"\x22 maxlength=\x22"+ setting_input_len+"\x22 value=\x22")
+			sock_setsend(setting_val)
+			if pos3>0 then 
+				sock_setsend("\x22 tabindex ='"+str(tab_index)+"' size=\x2210\x22>")
+			else
+				sock_setsend("\x22 tabindex ='"+str(tab_index)+"' size=\x2220\x22>")
+			end if
+		case "T":
+			sock_setsend("<input type=\x22time\x22 name=\x22"+setting_name+"\x22 value=\x22")
+			sock_setsend(setting_val)
+			if pos3>0 then 
+				sock_setsend("\x22 tabindex ='"+str(tab_index)+"' size=\x2210\x22>")
+			else
+				sock_setsend("\x22 tabindex ='"+str(tab_index)+"' size=\x2220\x22>")
+			end if
+		
+		case "D":
+			sock_setsend("<input type=\x22date\x22 name=\x22"+setting_name+"\x22 value=\x22")
+			sock_setsend(setting_val)
+			if pos3>0 then 
+				sock_setsend("\x22 tabindex ='"+str(tab_index)+"' size=\x2210\x22>")
+			else
+				sock_setsend("\x22 tabindex ='"+str(tab_index)+"' size=\x2220\x22>")
+			end if
+		
+		end select
+		
+		if pos3>0 then
+			device_process_esc_seq(setting_unit)
+			sock_setsend("</td><td align='right'>"+setting_unit+"</td></tr></table>")
+		end if
+
+		sock_setsend("</td>")
+		sock_setsend("</tr></table></td>")
+	'Print the setting status	
+		sock_setsend("<td width=20% align=center>")
+		if stg_num>0 then
+			select case html_setting_status(stg_num-1)
+			case EN_STG_STATUS_OK:
+				'sock_setsend("<font color=Green>")
+				'sock_setsend("<b>OK</b>")
+			case EN_STG_STATUS_INVALID:
+				sock_setsend("<font color=Red>")
+				sock_setsend("<b>Invalid</b>")
+			case EN_STG_STATUS_UNKNOWN:
+				sock_setsend("<font color=Red>")
+				sock_setsend("<b>Unfound</b>")
+			case else:
+				sock_setsend("<font color=Red>")
+				sock_setsend("<b>Failed</b>")
+			end select
+		end if
+		sock_setsend("</td></tr>")
+skip_print:		
+		i=romfile.find(romfile.pointer,">>",1)
+	wend
+end sub
+
+'------------------------------------------------------------------------------
+public sub html_save_setting()
+'Save the setting values
+	dim x, pos, pos1, stg_num as byte
+	dim setting_name as string(16)
+	dim setting_val as string(50)
+	dim http_req_string as string
+	dim backup_sock as byte
+	
+	backup_sock=sock.num
+	http_req_string=sock.httprqstring
+	setting_name=get_http_argument(http_req_string,"page=")
+	
+	select case setting_name
+	case "ser":page_code=0
+	case "sntp":page_code=1
+	case "agg":page_code=2
+	case "ethernet":page_code=3
+	case "gprs":page_code=4
+	case "wifi":page_code=5
+	case "pass":page_code=6
+	case else:
+			page_code=255
+	end select
+	
+	html_spec_chr_convert(http_req_string)
+	pos=instr(1,http_req_string,"session=",1)
+	pos1=instr(1,http_req_string,"ch=",1)
+	
+	'if pick the later one, 'session' or 'ch', and only count the ones of them as settings
+	'if ch= comes after the session=, use ch=
+	if pos1>pos then
+		pos=pos1
+		'find the first '=' after the 'ch='
+		x=instr(pos+3,http_req_string,"=",1)
+	else
+		'find the first '=' after 'session='
+		x=instr(pos+8,http_req_string,"=",1)
+	end if
+	pos1=instr(pos,http_req_string,"&",1)
+	it_was_save=NO
+	
+	if x>0 then
+		sock.gethttprqstring(255)
+	end if
+	while x<>0
+		'doevents
+		it_was_save=YES
+		setting_name=mid(http_req_string,pos1+1,x-pos1-1)
+		setting_val=get_http_argument(http_req_string,setting_name+"=")
+		stg_num=stg_find(setting_name)
+		
+		if stg_num<>0 then
+			stg_num=stg_num-1
+			if device_setting_check(setting_name,setting_val)=ng then 
+				html_setting_status(stg_num)=EN_STG_STATUS_INVALID
+				goto next_setting
+			end if
+			callback_html_stg_mod_sg(setting_name,html_channel_index,setting_val,EN_STG_SET)
+			html_setting_status(stg_num)=stg_sg(setting_name,html_channel_index,setting_val,EN_STG_SET)
+			if html_setting_status(stg_num)=EN_STG_STATUS_OK then device_setting_set(setting_name,html_channel_index,setting_val)
+		else
+			setting_val = get_http_argument(http_req_string,setting_name+"=")
+			html_setting_status(stg_num)=device_settings_sg(setting_name,html_channel_index,setting_val,stg_num,EN_STG_SET)	
+		end if
+next_setting:
+		sock.num=backup_sock
+		pos1=instr(pos1+1,http_req_string,"&",1)
+		pos=x+1
+		x=instr(pos,http_req_string,"=",1)
+		if x=0 and len(http_req_string)=255 then
+			http_req_string=right(http_req_string,10)
+			http_req_string=http_req_string+sock.gethttprqstring(240)
+			if http_req_string>0 then
+				pos1=instr(1,http_req_string,"&",1)
+				x=instr(pos1+1,http_req_string,"=",1)
+			end if
+		end if
+	wend	
+end sub
+
+'------------------------------------------------------------------------------
+public sub html_channel_selected
+	dim i as byte
+
+	if NUM_SERIAL_PORTS>1 then
+		sock_setsend("<select name = 'ch' onchange=PortSelected(this.value) STYLE='width: 100%'>")
+		for i = 0 to NUM_SERIAL_PORTS-1
+			if i = html_channel_index then
+				sock_setsend("<option value = '"+str(i)+"' selected='selected'>Serial Port "+str(i+1)+"</option>")
+			else
+				sock_setsend("<option value = '"+str(i)+"' >Serial Port "+str(i+1)+"</option>")
+			end if
+		next i	
+		sock_setsend("</select>")
+	end if
+end sub
+
+public sub html_ask_for_reboot()
+	if it_was_save=YES then
+		sock_setsend("onload = reboot_confirm()")
+	end if
+	
+end sub

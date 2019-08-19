@@ -1,0 +1,396 @@
+include "global.tbh"
+
+#if SUPPORTS_DISPLAY
+
+dim display_ta_time as word
+
+sub display_init()
+	
+	dim i as byte
+
+	display_ta_time = 0
+
+	if ta_mode = 0 then
+		' ACCESS CONTROL MODE
+		' init displaying data for relays
+		for i = 1 to RELAYS_NUMBER
+			display_relay_state(i)
+		next i
+
+		' init displaing data for readers
+		for i = 0 to SERIALS_NUMBER - 1
+			if readers(i).num <> 0 then
+				display_reader_state(readers(i).num)
+			end if
+		next i
+	else
+		' TIME & ATTENDANCE MODE
+
+		display_ta_icons()
+
+		dim date_req, time_req as string
+		dim dcount,mcount as word
+		dim sec as byte
+		
+		rtc.getdata(dcount,mcount,sec)
+		td_gmt_to_local(dcount,mcount,tz,ds)
+		td_to_str(time_req,dcount,mcount,sec,0)
+
+		display_time(mid(time_req, 9, 2) + ":" + mid(time_req, 11, 2))
+		display_date(left(time_req, 4) + "-" + mid(time_req, 5, 2) + "-" + mid(time_req, 7, 2))
+	end if
+	
+end sub
+
+sub display_ta_icons()
+
+	if ta_mode = true then
+		if ta_b1 = true then
+			if ta_direction = EN_TA_DT_IN then
+				display_icon("ICON_TA.BMP", 14, 210, 0, 0, 18, 30, 2016)
+			else
+				display_icon("ICON_TA.BMP", 14, 210, 0, 0, 18, 30, 0)
+			end if
+		else
+			display_icon("ICON_TA.BMP", 14, 210, 17*16+11, 0, 18, 30, 0)
+		end if
+
+		if ta_b2 = true then
+			if ta_direction = EN_TA_DT_OUT then
+				display_icon("ICON_TA.BMP", 106, 210, 17, 0, 18, 30, 2016)
+			else
+				display_icon("ICON_TA.BMP", 106, 210, 17, 0, 18, 30, 0)
+			end if
+		else
+			display_icon("ICON_TA.BMP", 106, 210, 17*16+11, 0, 18, 30, 0)
+		end if
+
+		if ta_b3 = true then
+			if ta_direction = EN_TA_DT_INTMP then
+				display_icon("ICON_TA.BMP", 198, 210, 34, 0, 18, 30, 2016)
+			else
+				display_icon("ICON_TA.BMP", 198, 210, 34, 0, 18, 30, 0)
+			end if
+		else
+			display_icon("ICON_TA.BMP", 198, 210, 17*16+11, 0, 18, 30, 0)
+		end if
+
+		if ta_b4 = true then
+			if ta_direction = EN_TA_DT_OUTTMP then
+				display_icon("ICON_TA.BMP", 290, 210, 51, 0, 18, 30, 2016)
+			else
+				display_icon("ICON_TA.BMP", 290, 210, 51, 0, 18, 30, 0)
+			end if
+		else
+			display_icon("ICON_TA.BMP", 290, 210, 17*16+11, 0, 18, 30, 0)
+		end if
+	end if
+
+end sub
+
+sub display_icon(file as string(16), x as word, y as word, bmp_x as word, bmp_y as word, size_x as word, size_y as word, backcolor as word)
+	
+	romfile.open(file)
+	lcd.backcolor = backcolor
+	lcd.bmp(romfile.offset, x, y, bmp_x, bmp_y, size_x, size_y)	
+
+end sub
+
+sub display_time(time as string(17))
+
+	dim i as byte
+	dim offset as word
+	romfile.open("TIMES.BMP")
+
+	if ta_mode = 1 then
+		if ta_time <> time then
+			offset = 22
+			for i = 1 to len(time)
+				display_time_symbol(mid(time, i, 1), offset)
+			next i
+			
+			ta_time = time
+		end if
+	end if
+
+	if display_ta_time > 0 then
+		display_ta_time = display_ta_time - 1
+		if display_ta_time = 0 then
+			display_lcd_access(" ", 0, 180, 320, 20, 0)
+		end if
+	end if
+
+end sub
+
+sub display_time_symbol(symbol as string(1), byref off as word)
+	
+	dim pos_in_bmp as word
+	dim sz, of as byte
+	dim add_off as byte
+	
+	sz = 60
+	of = 9
+	
+	select case symbol
+	case "0":
+		pos_in_bmp = 0*sz
+		add_off = sz
+	case "1":
+		pos_in_bmp = 1*sz
+		add_off = sz
+	case "2":
+		pos_in_bmp = 2*sz
+		add_off = sz
+	case "3":
+		pos_in_bmp = 3*sz
+		add_off = sz
+	case "4":
+		pos_in_bmp = 4*sz
+		add_off = sz
+	case "5":
+		pos_in_bmp = 5*sz
+		add_off = sz
+	case "6":
+		pos_in_bmp = 6*sz
+		add_off = sz
+	case "7":
+		pos_in_bmp = 7*sz
+		add_off = sz
+	case "8":
+		pos_in_bmp = 8*sz
+		add_off = sz
+	case "9":
+		pos_in_bmp = 9*sz
+		add_off = sz
+	case ":":
+		pos_in_bmp = 10*sz
+		add_off = 39
+	end select
+	lcd.bmp(romfile.offset, off, 30, pos_in_bmp + of, 40, sz, 80)
+	off = off + add_off
+	
+end sub
+
+sub display_date(dt as string(10))
+
+	dim i as byte
+	dim offset as word
+	
+	if ta_mode = 1 then
+		if ta_date <> dt then
+			romfile.open("TIMES.BMP")
+
+			offset = 50
+			for i = 1 to len(dt)
+				display_date_symbol(mid(dt, i, 1), offset)
+			next i
+			
+			ta_date = dt
+		end if
+	end if
+
+end sub
+
+sub display_date_symbol(symbol as string(1), byref off as word)
+	
+	dim pos_in_bmp as word
+	dim sz, of as byte
+	dim add_off as byte
+	
+	sz = 24
+	of = 7
+	
+	select case symbol
+	case "0":
+		pos_in_bmp = 0*sz
+		add_off = sz
+	case "1":
+		pos_in_bmp = 1*sz
+		add_off = sz
+	case "2":
+		pos_in_bmp = 2*sz
+		add_off = sz
+	case "3":
+		pos_in_bmp = 3*sz
+		add_off = sz
+	case "4":
+		pos_in_bmp = 4*sz
+		add_off = sz
+	case "5":
+		pos_in_bmp = 5*sz
+		add_off = sz
+	case "6":
+		pos_in_bmp = 6*sz
+		add_off = sz
+	case "7":
+		pos_in_bmp = 7*sz
+		add_off = sz
+	case "8":
+		pos_in_bmp = 8*sz
+		add_off = sz
+	case "9":
+		pos_in_bmp = 9*sz
+		add_off = sz
+	case "-":
+		pos_in_bmp = 10*sz
+		add_off = 15
+	end select
+	lcd.bmp(romfile.offset, off, 130, pos_in_bmp + of, 140, sz, 50)
+	off = off + add_off
+	
+end sub
+
+sub display_reader_state(reader as byte)
+	
+	dim i as byte
+	dim index as byte
+
+	if ta_mode = 0 then
+		index = 0
+		for i = 0 to SERIALS_NUMBER - 1
+			if readers(i).num = reader then
+				display_lcd_access("Reader " + Str(reader), 1, index*20 + 120, 90, 20, 0)
+				select case readers(i).state
+				case EN_SR_WAIT:
+					display_lcd_access("WAITING...", 90, index*20 + 120, 120, 20, 14823)
+					
+				case EN_SR_CHECKING:
+					display_lcd_access("CHECKING", 90, index*20 + 120, 120, 20, 2016)
+
+				case EN_SR_GRANTED:
+					display_lcd_access("GRANTED", 90, index*20 + 120, 120, 20, 2016)
+					
+				case EN_SR_DENIED:
+					display_lcd_access("DENIED", 90, index*20 + 120, 120, 20, 31)
+					
+				case EN_SR_APB:
+					display_lcd_access("APB", 90, index*20 + 120, 120, 20, 31+2016)
+
+				end select
+
+			end if
+			if readers(i).num <> 0 then
+				index = index + 1
+			end if
+		next i
+	end if
+
+end sub
+
+sub display_relay_state(relay as byte)
+
+	if ta_mode = 0 then
+		display_lcd_access("Relay " + Str(relay), 1, (relay-1)*20 + 20, 80, 20, 0)
+		
+		if relays(relay-1).emerg_stat = true then
+			display_lcd_access("EMERG", 90, (relay-1)*20 + 20, 120, 20, 2016)
+		else
+			if relays(relay-1).block_stat = true then
+				display_lcd_access("BLOCK", 90, (relay-1)*20 + 20, 120, 20, 2016)
+			else
+				if relay_perco = false and relay_emergency_status = EN_ES_EMERGENCY_ACTIVE then
+					display_lcd_access("EMERG", 90, (relay-1)*20 + 20, 120, 20, 2016)
+				else
+					if relay_perco = false and relay_block_status = EN_BS_BLOCK_ACTIVE then
+						display_lcd_access("CLOSED", 90, (relay-1)*20 + 20, 120, 20, 31)
+					else
+						select case relays(relay - 1).status
+						case CLOSED:
+							display_lcd_access("CLOSED", 90, (relay-1)*20 + 20, 120, 20, 31)
+							
+						case OPENED:
+							if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and relay_block_status = EN_BS_BLOCK_NOT_ACTIVE then
+								display_lcd_access("OPENED", 90, (relay-1)*20 + 20, 120, 20, 2016)
+							else
+								display_lcd_access("CLOSED", 90, (relay-1)*20 + 20, 120, 20, 31)
+							end if
+							
+						case LONG_OPENED:
+							if relay_emergency_status = EN_ES_EMERGENCY_NOT_ACTIVE and relay_block_status = EN_BS_BLOCK_NOT_ACTIVE then
+								display_lcd_access("HOLD", 90, (relay-1)*20 + 20, 120, 20, 2016)
+							else
+								display_lcd_access("CLOSED", 90, (relay-1)*20 + 20, 120, 20, 31)
+							end if
+							
+						end select
+					end if
+				end if
+			end if
+		end if
+	end if
+	
+end sub
+
+function display_bits(value as long, len as byte) as string(16)
+
+	dim i as byte
+	dim tmp as long
+	dim strtmp as string(16)
+
+	tmp = value
+	strtmp = ""
+	
+	for i = 1 to len
+		if (tmp and 1) = 1 then
+			strtmp = strtmp + "+"
+		else
+			strtmp = strtmp + "-"
+		end if
+		
+		tmp = tmp shr 1
+	next i
+	
+	display_bits = strtmp
+	
+end function
+
+sub display_lcd_text(byref text as string(30), x as word, y as word, width as word, height as word)
+	
+	lcd.textalignment = PL_LCD_TEXT_ALIGNMENT_TOP_LEFT
+	romfile.open(SMALL_FONT)
+	lcd.setfont(romfile.offset)	
+	lcd.textverticalspacing=1
+	lcd.texthorizontalspacing=1
+	lcd.forecolor=LCD_FORECOLOR
+	lcd.backcolor=LCD_BACKCOLOR
+	
+	lcd.printaligned(text,x,y,width,height)
+
+end sub
+
+sub display_lcd_access(byref text as string(30), x as word, y as word, width as word, height as word, color as word)
+	
+	lcd.textalignment = PL_LCD_TEXT_ALIGNMENT_MIDDLE_CENTER
+	romfile.open(LCD_STD_FONT)
+	lcd.setfont(romfile.offset)	
+	lcd.textverticalspacing=1
+	lcd.texthorizontalspacing=1
+	lcd.forecolor=LCD_FORECOLOR
+	lcd.backcolor = color
+	
+	lcd.printaligned(text,x,y,width,height)
+
+end sub
+
+sub display_lcd_ta_time(byref text as string(30), x as word, y as word, width as word, height as word, color as word)
+	
+	lcd.textalignment = PL_LCD_TEXT_ALIGNMENT_MIDDLE_CENTER
+	romfile.open(LCD_FIX_FONT)
+	lcd.setfont(romfile.offset)	
+	lcd.textverticalspacing=1
+	lcd.texthorizontalspacing=1
+	lcd.forecolor=LCD_FORECOLOR
+	lcd.backcolor = color
+	
+	lcd.printaligned(text,x,y,width,height)
+
+end sub
+
+sub display_name(name as string(20))
+
+	display_lcd_access(name, 0, 180, 320, 20, 0)
+	display_ta_time = 10
+
+end sub
+
+#endif

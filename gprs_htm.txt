@@ -1,0 +1,5 @@
+>>GE	GPRS Mode 						B,L,0-Disabled;1-Enabled (on demand);2-Enabled (permanently);	^
+>>GA	ATDT Command Parameter			S,I,16	^
+>>GN	Acess Point Name				S,I,32	^
+>>GU	Username			S,I,16	^
+>>GP	Password			S,I,16	^

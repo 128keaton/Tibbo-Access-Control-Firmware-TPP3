@@ -1,0 +1,138 @@
+
+<?
+	include "global.tbh"
+
+?>
+<html>
+<HEAD>
+<META HTTP-EQUIV="Expires" CONTENT="Tue, 01 Jan 1980 1:00:00 GMT">
+<META HTTP-EQUIV="CACHE-CONTROL" CONTENT="NO-CACHE">
+<script type="text/javascript">
+
+function reboot_confirm()
+{
+var r=confirm("<?sock_setsend(HTML_CONFIRM_REBOOT)?>");
+if (r==true)
+  {
+  window.top.location.replace("httpcmd.html?opt=reboot&session=<?sock_setsend(login_data)?>")
+  }
+}
+
+function init_confirm()
+{
+var r=confirm("<?sock_setsend(HTML_CONFIRM_INITIALIZE)?>");
+if (r==true)
+  {
+  window.top.location.replace("httpcmd.html?opt=init&session=<?sock_setsend(login_data)?>")
+  }
+}
+
+function logout_confirm()
+{
+var r=confirm("<?sock_setsend(HTML_CONFIRM_LOG_OFF)?>");
+if (r==true)
+  {
+  window.top.location.replace("httpcmd.html?opt=logout&session=<?sock_setsend(login_data)?>")
+  }
+}
+
+</script>
+
+<script language="javascript1.2">
+function toggleBullet(elm) {
+ var newDisplay = "none";
+ var e = elm.nextSibling; 
+ while (e != null) {
+  if (e.tagName == "OL" || e.tagName == "ol") {
+   if (e.style.display == "none") newDisplay = "block";
+   break;
+  }
+  e = e.nextSibling;
+ }
+ while (e != null) {
+  if (e.tagName == "OL" || e.tagName == "ol") e.style.display = newDisplay;
+  e = e.nextSibling;
+ }
+}
+
+function collapseAll() {
+  var lists = document.getElementsByTagName('OL');
+  for (var j = 0; j < lists.length; j++) 
+   lists[j].style.display = "none";
+  lists = document.getElementsByTagName('ol');
+  for (var j = 0; j < lists.length; j++) 
+   lists[j].style.display = "none";
+  var e = document.getElementById("root");
+  e.style.display = "block";
+}
+</script>
+
+
+<style type="text/css">
+p {text-indent:42px;}
+body
+{
+font-family: arial, 'sans serif';
+background-color:#029DD0;
+color: #FFFFFF;
+font-size: 100%;
+}
+
+a
+{
+float:left;
+width:12em;
+text-decoration:none;
+color:#FFFFFF;
+background-color:#029DD0;
+padding:0.2em 0.6em;
+}
+a:hover {background-color:#8080C0;}
+li {display:block;}
+ol (margin:0;padding:5;}
+
+</style>
+</HEAD>
+
+<body onload='collapseAll();'>
+
+<form id="delete_form" action="delete_result.html?" method="get">
+<input type='hidden' name='session' id='session' value='<?sock_setsend(login_data)?>'>
+<input type ="hidden" id="del" name="del">
+<input type ="hidden" id="del_all" name="del_all">
+<input type ="hidden" id="table_name" name="table_name">
+</form>
+
+<h3>Tibbo Technology</h3>
+<? if login_mode=CMD_MODE_HTTP then ?>
+<table width="100%"><tr><td height="600px" width="100%" valign=top>
+
+<ol id="root">
+<li><a href = 'password.html?session=<?sock_setsend(login_data)?>' target = showframe> Password </a></li>
+<li><a href = 'ethernet.html?session=<?sock_setsend(login_data)?>' target = showframe> Ethernet </a></li>
+<li><a href = 'wifi.html?session=<?sock_setsend(login_data)?>' target = showframe> Wi-Fi </a></li>
+<li><a href = 'agg.html?session=<?sock_setsend(login_data)?>' target = showframe> AggreGate </a></li>
+<li><a href = 'sntp.html?session=<?sock_setsend(login_data)?>' target = showframe> SNTP </a></li>
+<li><a href = 'gprs.html?session=<?sock_setsend(login_data)?>' target = showframe> GPRS </a></li>
+
+<li><a href="#" onclick="toggleBullet(this)">Device Actions...</a>
+	<ol>
+		<li><a href="#" onclick='init_confirm()'> Initialize </a></li>
+		<li><a href="#" onclick='reboot_confirm()'> Reboot </a></li>
+	</ol>
+
+<li><a href="#" onclick="logout_confirm()"> Log out </a></li>
+</ol>	
+
+</td></tr>
+
+<tr><td>
+
+<?
+end if
+?>
+
+</td></tr>
+</table>
+</BODY>
+</html>

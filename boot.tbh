@@ -1,0 +1,6 @@
+declare sub boot()
+#if SUPPORTS_DISPLAY
+declare sub print_main_screen()
+declare sub print_time()
+declare sub kp_init()
+#endif

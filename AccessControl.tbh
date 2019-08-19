@@ -1,0 +1,87 @@
+include "time_attendance.tbh"
+include "functions.tbh"
+include "serial.tbh"
+include "relays.tbh"
+include "pins.tbh"
+include "events.tbh"
+include "display.tbh"
+
+#define ACWARE_VERSION "1.05.01"
+
+#define TRANSACTION_DISABLE 0
+
+enum EN_AC_RESULT
+	EN_AR_UNKNOWN,
+	EN_AR_GRANTED,
+	EN_AR_RESTRICTED,
+	EN_AR_APB
+end enum
+
+declare flag_update as boolean
+declare flag_need_init as boolean
+declare tbl_hash(10000) as byte
+declare tbl_hash_size as word
+declare tz, ds as string(17)
+
+'	APB variables define
+enum EN_AC_APB_TYPE
+	EN_AC_APB_HARD = 0,
+	EN_AC_APB_SOFT = 1,
+	EN_AC_APB_TIMED = 2
+end enum
+
+declare ac_apb_enable as boolean
+declare ac_apb_timeout as byte
+declare ac_apb_to_permission as boolean
+declare ac_apb_type as EN_AC_APB_TYPE
+declare ac_apb_to_type as byte
+
+declare sub ac_init()
+declare sub ac_init_sync()
+declare function ac_get_name_hash(byref card_id as string(16)) as byte
+declare function ac_check_id(byref id as string(16), reader as byte, relayChannel as byte, byref name as string(20)) as EN_AC_RESULT
+declare function ac_check_acl(acl_index as word, reader as byte, byref time as string(17), byref card_id as string(16), byref acl_name as string(16)) as EN_AC_RESULT
+declare function ac_check_timezone(byref timezone as string(16), byref time as string(17)) as boolean
+declare function ac_test_bits(num as char, value as long) as boolean
+declare sub ac_speed_test()
+
+'--------------------------------------
+'	PROFILER
+'--------------------------------------
+'const PROFILER_NUMS = 20
+
+'type PROFILERTYPE
+	
+'	count as word
+'	time as dword
+
+'end type
+
+'enum PROFILERCHNL
+	
+'	IDLE,
+'	TABLE_OPEN,
+'	TABLE_FIND,
+'	TABLE_READ,
+'	TABLE_WRITE,
+'	TABLE_GET,
+'	EVENT_OPEN,
+'	EVENT_PREPARE,
+'	EVENT_WRITE,
+'	EVENT_FIRE,
+'	TIME_GET,
+'	RELAY_OPEN,
+'	AC_CODE,
+'	ACL_CODE,
+'	TIMEZONE_CODE,
+'	WRITE_SETPOINTER,
+'	WRITE_TRANSSTART,
+'	WRITE_SETDATA,
+'	WRITE_TRANSCOMMIT,
+'	WRITE_FINISH
+
+'end enum
+
+'declare sub profiler_init()
+'declare function profiler_add(num as PROFILERCHNL, cnt as byte) as PROFILERCHNL
+'declare sub profiler_results()

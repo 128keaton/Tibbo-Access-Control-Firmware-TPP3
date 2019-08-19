@@ -1,0 +1,79 @@
+>>DH	E	B	1	0	1	I	0	Ethernet DHCP
+>>IP	E	D	1	4	4	I	192.168.75.40	Ethernet IP
+>>GI	E	D	1	4	4	I	192.168.75.1	Ethernet Gateway IP
+>>NM	E	D	1	4	4	I	255.255.255.0	Ethernet Netmask
+>>WE	E	B	1	0	2	I	0	Wi-Fi mode
+>>WD	E	B	1	0	1	I	0	Wi-Fi DHCP
+>>WI	E	D	1	4	4	I	192.168.1.41	Wi-Fi IP
+>>WG	E	D	1	4	4	I	192.168.1.1	Wi-Fi Gateway IP
+>>WN	E	D	1	4	4	I	255.255.255.0	Wi-Fi Netmask
+>>WA	E	S	1	0	22	I	^	W-Fi Access Point (AP) Name (SSID)
+>>WS	E	B	1	0	4	I	0	AP Security Mode
+>>WP	E	S	1	0	26	I	^	AP Password
+>>WK	E	S	1	0	32	I	^	AP Security Key (internal setting)
+>>wA	E	S	1	0	22	I	^	Previous AP Name (internal setting)
+>>wS	E	B	1	0	4	I	0	Previous AP Security Mode (internal setting)
+>>wP	E	S	1	0	26	I	^	Previous AP password (internal setting)
+>>GE	E	B	1	0	2	I	0	GPRS Mode
+>>GA	E	S	1	0	16	I	*99\x23	GPRS AT Command String
+>>GN	E	S	1	0	31	I	^	GPRS APN
+>>GU	E	S	1	0	16	I	^	GPRS Username
+>>GP	E	S	1	0	16	I	^	GPRS Password
+>>AR	E	B	1	0	1	I	1	AggreGate Mode
+>>ON	E	S	1	0	32	I	admin	AggreGate Owner Name
+>>DN	E	S	1	0	32	I	device	AggreGate Device Name
+>>TN	E	S	1	0	32	I	^	AggreGate Server Domain Name
+>>TI	E	D	1	4	4	I	192.168.75.149	AggreGate Server IP
+>>TP	E	W	1	0	65535	I	6480	AggeGate Server Port
+>>CT	E	B	1	0	99	I	5	AggreGate Connection Timeout
+>>PW	E	S	1	0	6	I	^	Password
+>>TE	E	B	1	0	1	A	0	SNTP enbled
+>>TS	E	D	1	4	4	A	220.130.158.71	SNTP server ip
+>>TZ	E	B	1	0	34	A	0	timezone
+>>DS	E	B	1	0	1	A	0	daylight saving
+>>RI	E	B	4	0	100	I	1/1/1/1	Relays Impulse Length
+>>RS	E	B	4	0	1	I	0/0/0/0	Relay Normal State
+>>PF	E	B	8	0	200	I	0/0/0/0/0/0/0/0	Pins Function Assigned
+>>PS	E	B	8	0	1	I	0/0/0/0/0/0/0/0	Pins Normal State
+>>PR	E	B	8	0	15	I	0/0/0/0/0/0/0/0	Pins Relays Assigned
+>>PD	E	B	8	0	100	I	0/0/0/0/0/0/0/0	Pins Delay Stop
+>>PN	E	B	8	0	100	I	1/1/1/1/1/1/1/1	Pins Delay Renewal
+>>AC	E	B	1	0	1	A	0	Auto Close
+>>RHC	E	B	1	0	1	A	0	RFID Hex conversion
+>>RHL	E	B	1	1	14	A	4	RFID code, hex data length
+>>POS	E	B	1	0	14	A	0	Position offset (to left)
+>>RFC	E	B	1	1	14	A	14	RFID code
+>>CM	E	B	1	0	1	A	0	Controller Mode
+>>B1	E	B	1	0	2	A	1
+>>B2	E	B	1	0	2	A	1
+>>B3	E	B	1	0	2	A	1
+>>B4	E	B	1	0	2	A	1
+>>AB	E	B	1	0	1	A	0
+>>YY	E	B	1	0	1	A	0
+>>MC	E	S	1	0	25	I	^	Master Card ID
+>>NW	E	B	4	0	3	A	0/1/2/3	Serial channel for Wiegand
+>>NI	E	B	16	0	55	A	32/33/4/20/34/35/5/21/36/37/6/22/38/39/7/23	Pin for Input
+>>NR	E	B	4	0	55	A	24/25/28/29	Pin for Relay
+>>EI	E	B	1	0	1	A	0	Events for INPUTs
+>>ER	E	B	1	0	1	A	0	Events for RELAYs
+>>EG	E	B	1	0	1	A	0	Events for AGG
+>>EA	E	B	1	0	1	A	0	Events for ACL
+>>ET	E	B	1	0	1	A	0	Events for Time&Attendance
+>>EE	E	B	1	0	1	A	0	Events for READERs
+>>ED	E	B	1	0	1	A	0	Events for DOORs
+>>EU	E	B	1	0	1	A	0	Events for TURNSTYLEs
+>>EX	E	B	1	0	1	A	0	Events for STATEs
+>>EV	E	B	1	0	1	A	0	Events for DEVICE
+>>EW	E	B	1	0	1	A	0	Events for STATE STORE
+>>AE	E	B	1	0	1	A	0	APB Enable
+>>AT	E	B	1	0	100	A	10	APB Timeout
+>>AD	E	B	1	0	1	A	0	APB Default
+>>PB	E	B	1	0	1	A	0	Events for APB
+>>AY	E	B	1	0	2	A	0	APB Type
+>>AI	E	B	1	0	255	A	^	APB TimeOut for Timed Type
+#define STG_DESCRIPTOR_FILE "settings.xtxt"
+#define STG_TIMESTAMP 1
+#define STG_MAX_NUM_SETTINGS 73
+#define STG_RAM_ARRAY_SIZE 0
+#define STG_MAX_SETTING_NAME_LEN 3
+#define STG_MAX_SETTING_VALUE_LEN 32

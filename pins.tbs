@@ -1,0 +1,237 @@
+include "global.tbh"
+
+	dim pins(PINS_NUMBER) as T_PIN_STATE
+	dim pins_sets(PINS_NUMBER) as T_PIN_SET
+
+sub pin_init()
+
+	dim i as byte
+
+	pin_array_init()
+	
+	for i = 0 to PINS_NUMBER - 1
+		io.num = pin_get_slot(i + 1)
+		io.enabled = NO
+		
+		pins(i).state = EN_PS_OPEN
+		pins(i).timer = 0
+		pins(i).toggle = false
+	next i
+
+end sub
+
+function pin_get_slot(pin as byte) as byte
+	
+	pin_get_slot = pins_sets(pin - 1).hw_num
+		
+end function
+ 
+sub pin_array_init()
+	
+	dim i as word
+	dim rec_num as word
+	dim pin as byte
+
+		
+	for i = 0 to PINS_NUMBER - 1
+		pins_sets(i).func = val(stg_get("PF", i))
+		pins_sets(i).relays = val(stg_get("PR", i))
+		pins_sets(i).delay_stop = val(stg_get("PD", i))
+		pins_sets(i).delay_renewal = val(stg_get("PN", i))
+		pins_sets(i).pin_type = val(stg_get("PS", i))
+		pins_sets(i).hw_num = val(stg_get("NI", i))
+	next i
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Table for pins has updated")
+	#endif
+
+end sub
+
+sub pin_read_state()
+	dim pins as byte
+
+	for pins = 1 to PINS_NUMBER
+		pin_check(pins)
+	next
+
+end sub
+
+sub pin_check(pin as byte)
+	
+	if ta_mode = true then exit sub
+
+	if (pins_sets(pin-1).pin_type = EN_PT_NORMAL_OPEN and io.lineget(pin_get_slot(pin)) = LOW) 
+		or (pins_sets(pin-1).pin_type =EN_PT_NORMAL_CLOSE and io.lineget(pin_get_slot(pin)) = HIGH) then
+
+		select case pins(pin-1).state
+		case EN_PS_OPEN:
+			pins(pin-1).state = EN_PS_CLOSE
+			event_add(EN_ES_INPUT, EN_EE_PIN_REQUEST, Str(pin), "")
+			pins(pin-1).timer = pins_sets(pin-1).delay_stop
+			pin_function(pins_sets(pin-1).func, EN_PE_START, pin, pins_sets(pin-1).relays)
+			
+		case EN_PS_CLOSE:
+			pins(pin-1).timer = pins_sets(pin-1).delay_stop
+			
+		case EN_PS_GUARD:
+			if pins(pin-1).timer > 0 then
+				pins(pin-1).timer = pins(pin-1).timer - 1 
+			else
+				pins(pin-1).state = EN_PS_OPEN
+			end if
+			
+		end select
+	else
+		select case pins(pin-1).state
+		case EN_PS_CLOSE:
+			if pins(pin-1).timer > 0 then
+				pins(pin-1).timer = pins(pin-1).timer - 1
+			else
+				event_add(EN_ES_INPUT, EN_EE_PIN_UNREQUEST, Str(pin), "")
+				pins(pin-1).state = EN_PS_GUARD
+				pins(pin-1).timer = pins_sets(pin-1).delay_renewal
+				pin_function(pins_sets(pin-1).func, EN_PE_END, pin, pins_sets(pin-1).relays)
+			end if
+			
+		case EN_PS_GUARD:
+				if pins(pin-1).timer > 0 then
+					pins(pin-1).timer = pins(pin-1).timer - 1
+				else
+					pins(pin-1).state = EN_PS_OPEN
+				end if
+			
+		end select
+	end if
+	
+end sub
+
+sub pin_function(func as EN_PIN_FUNCTIONAL, ev as EN_PIN_EVENT, pin as byte, rels as byte)
+
+	select case func
+	case EN_PF_UNASSIGNED:
+		
+	case EN_PF_REQUEST_EXIT:
+		if ev = EN_PE_START then
+			event_add(EN_ES_INPUT, EN_EE_FUNCTION, "REQUEST EXIT", Str(rels))
+			relay_open_channel(rels)
+		end if
+		
+	case EN_PF_REMOTE_OPEN:
+		if ev = EN_PE_START then
+			event_add(EN_ES_INPUT, EN_EE_FUNCTION, "REMOTE OPEN", Str(rels))
+			relay_open_channel(rels)
+		end if
+		
+	case EN_PF_REMOTE_OPEN_LONG:
+		if ev = EN_PE_START then
+			event_add(EN_ES_INPUT, EN_EE_FUNCTION, "REMOTE OPEN HOLD", Str(rels))
+			relay_open_channel_long(rels)
+		else
+			event_add(EN_ES_INPUT, EN_EE_FUNCTION, "REMOTE UNHOLD", Str(rels))
+			relay_close_channel_long(rels)
+		end if
+		
+	case EN_PF_DOOR_CONTACT:
+		if ev = EN_PE_START then
+			event_add(EN_ES_DOOR, EN_EE_DOOR_CLOSE, "", "")
+			relay_close_opened(EN_SR_DT_NOT_APPLICABLE)
+		else
+			event_add(EN_ES_DOOR, EN_EE_DOOR_OPEN, "", "")
+		end if
+
+	case EN_PF_TURNSTYLE_IN_CONTACT:
+		if ev = EN_PE_START then
+			event_add(EN_ES_TURNSTYLE, EN_EE_TURNSTYLE_TURNIN, "", "")
+			relay_close_opened(EN_SR_DT_IN)
+		end if
+
+	case EN_PF_TURNSTYLE_OUT_CONTACT:
+		if ev = EN_PE_START then
+			event_add(EN_ES_TURNSTYLE, EN_EE_TURNSTYLE_TURNOUT, "", "")
+			relay_close_opened(EN_SR_DT_OUT)
+		end if
+
+	case EN_PF_ALARM_CONTACT:
+		
+	case EN_PF_EMERGENCY_OPEN:
+		if ev = EN_PE_START then
+			event_add(EN_ES_INPUT, EN_EE_FUNCTION, "SET STATUS", "EMERGENCY")
+			relay_emergency_start(rels)
+		else
+			event_add(EN_ES_INPUT, EN_EE_FUNCTION, "RESET STATUS", "EMERGENCY")
+			relay_emergency_end(rels)
+		end if
+
+	case EN_PF_EMERGENCY_TOGGLE:
+		if ev = EN_PE_START then
+			if pins(pin-1).toggle = false then
+				event_add(EN_ES_INPUT, EN_EE_FUNCTION, "SET STATUS", "EMERGENCY")
+				pins(pin-1).toggle = true
+				relay_emergency_start(rels)
+			else
+				event_add(EN_ES_INPUT, EN_EE_FUNCTION, "SET STATUS", "EMERGENCY")
+				pins(pin-1).toggle = false
+				relay_emergency_end(rels)
+			end if
+		end if
+ 
+	case EN_PF_BLOCK:
+		if ev = EN_PE_START then
+			event_add(EN_ES_INPUT, EN_EE_FUNCTION, "SET STATUS", "BLOCK")
+			relay_block_start(rels)
+		else
+			event_add(EN_ES_INPUT, EN_EE_FUNCTION, "RESET STATUS", "BLOCK")
+			relay_block_end(rels)
+		end if
+
+	case EN_PF_BLOCK_TOGGLE:
+		if ev = EN_PE_START then
+			if pins(pin-1).toggle = false then
+				event_add(EN_ES_INPUT, EN_EE_FUNCTION, "SET STATUS", "BLOCK")
+				pins(pin-1).toggle = true
+				relay_block_start(rels)
+			else
+				event_add(EN_ES_INPUT, EN_EE_FUNCTION, "SET STATUS", "BLOCK")
+				pins(pin-1).toggle = false
+				relay_block_end(rels)
+			end if
+		end if
+
+	end select
+	
+end sub
+
+function pin_get_emergency_relays() as byte
+
+	dim i as byte
+	dim relays as byte
+
+	' Check type of blocks pins
+	relays = 0
+	for i = 0 to PINS_NUMBER - 1
+		if pins_sets(i).func = EN_PF_EMERGENCY_OPEN then
+			relays = relays or pins_sets(i).relays
+		end if
+	next i
+
+	pin_get_emergency_relays = relays
+
+end function
+
+function pin_get_block_relays() as byte
+	
+	dim i as byte
+	dim relays as byte
+
+	' Check type of blocks pins
+	relays = 0
+	for i = 0 to PINS_NUMBER - 1
+		if pins_sets(i).func = EN_PF_BLOCK then
+			relays = relays or pins_sets(i).relays
+		end if
+	next i
+		
+	pin_get_block_relays = relays
+
+end function

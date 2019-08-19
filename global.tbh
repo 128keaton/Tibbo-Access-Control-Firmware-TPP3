@@ -1,0 +1,283 @@
+
+'DEFINES------------------------------------------------------------------------------
+
+#define BEEP_AVAILABLE 0
+
+'====== MISC. ======
+#define FIRMWARE_VERSION "{dev_base.1.04.03}"
+#define MAX_NUM_WLN_FAILURES 5
+#define SIMULATE_ETHER_OFF_BY_BUTTON 0
+#define GPRS_PAYLOAD_SIZE 2
+#define RED_IO_NUM_1 24
+#define GREEN_IO_NUM_1 25
+#define MAX_NUM_INTERFACES 4
+#define WLN_WPA 1
+#define NUM_SERIAL_PORTS 4
+
+'====== DS Manager ======
+#if SUPPORTS_DS
+	#define SDF_FILE "sdf.txt"
+	#define MAX_NUM_SDF_LINES 21
+#endif
+
+'====== Debug Print ======
+#define STG_DEBUG_PRINT 0
+#define DEV_DEBUG_PRINT 0
+#define WLN_DEBUG_PRINT 0
+#define GPRS_DEBUG_PRINT 0
+
+'====== AggreGate ======
+#if SUPPORTS_AGG
+	#define AGG_MULTI_NODE 0
+	#define AGG_LOGIN_CONTROL 1
+	#define AGG_SEND_WAIT_TIME 10
+#endif
+
+'====== WiFi =======
+#if WLN_AVAILABLE
+	#if PLATFORM_ID=EM500W
+		#define WLN_RESET_MODE 1
+	#elif PLATFORM_ID=TPP2WG2 or PLATFORM_ID=EM1000W or PLATFORM_ID=NB1010W or PLATFORM_ID=TPP2W or PLATFORM_ID=TPP3W or PLATFORM_ID=T1000W
+		#define WLN_RST PL_IO_NUM_51
+		#define WLN_CS PL_IO_NUM_49
+		#define WLN_DI PL_IO_NUM_52
+		#define WLN_DO PL_IO_NUM_50
+		#define WLN_CLK PL_IO_NUM_53
+	#elif PLATFORM_ID=EM1202W
+		#define WLN_RST PL_IO_NULL
+		#define WLN_CS PL_IO_NULL
+		#define WLN_DI PL_IO_NULL
+		#define WLN_DO PL_IO_NULL
+		#define WLN_CLK PL_IO_NULL
+	#elif PLATFORM_ID=EM1206W or PLATFORM_ID=DS1101W or PLATFORM_ID=DS1102W
+		#define WLN_RST PL_IO_NUM_11
+		#define WLN_CS PL_IO_NUM_15
+		#define WLN_DI PL_IO_NUM_12
+		#define WLN_DO PL_IO_NUM_13
+		#define WLN_CLK PL_IO_NUM_14
+	#endif
+#endif
+
+'====== Signal Strength Indication ======
+#if PLATFORM_ID=TPP3W
+	#define SIGNAL_STRENGTH_INDICATION 1
+	#define SIGNAL_STRENGTH_CLR	PL_IO_NUM_46
+	#define SIGNAL_STRENGTH_CK PL_IO_NUM_47
+	#define SIGNAL_STRENGTH_DATA PL_IO_NUM_48
+
+#endif
+
+#if PLATFORM_ID=TPP2WG2 or PLATFORM_ID=TPP2W
+	#define SIGNAL_STRENGTH_INDICATION 1
+	#define SIGNAL_STRENGTH_CLR	PL_IO_NUM_46
+	#define SIGNAL_STRENGTH_CK PL_IO_NUM_47
+	#define SIGNAL_STRENGTH_DATA PL_IO_NUM_48
+#endif
+
+'====== Display ======
+#if SUPPORTS_DISPLAY
+	#define MENU_CURSOR_STYLE 1
+	#define LIST_BOX_CURSOR_STYLE 1
+	#define INPUT_BOX_CURSOR_STYLE 1
+	#define LCD_LOCK lcd.lock
+	#define LCD_UNLOCK lcd.unlock
+	#define VER_SPACING 9
+	#define HOR_SPACING 2 
+
+	#define BMP_LEFT_XOFFSET 320
+	#define BMP_NUM_XOFFSET 240
+	#define BMP_ALPH1_XOFFSET 280
+	#define BMP_ALPH2_XOFFSET 360
+	#define BMP_STORE_XOFFSET 40
+
+	#define STD_INPUT_WAIT_TIME 20 'in 0.5 seconds
+	
+	'------ ui_menu ------
+	#define BMP_CANCEL_XOFFSET 0
+	#define BMP_ENTER_XOFFSET 40
+	#define BMP_UP_XOFFSET 80
+	#define BMP_DOWN_XOFFSET 120
+	#define MENU_MAX_LVL 5
+	#define MENU_MAX_ITEM_PER_LVL 16
+	#define MENU_DISPLAY_ITEM_PER_LVL 6
+	#define LCD_MENU_TOUT 0
+	#define DISPLAY_STR_LEN 150
+	#define MENU_STRING_LEN 255
+	#define SCROLL_BAR_WIDTH 15
+	#define SCROLL_ARROW_HEIGHT 12
+	#define SCROLL_MIN_HEIGHT 2
+	#define SCROLL_CURSOR_WIDTH 9
+	#define CURSOR_BAR_LEN_OFFSET 2
+	#define SCROLL_BORDER 2
+	#define LCD_BACKCOLOR 0
+	#define LCD_FORECOLOR 65535
+	#define LCD_DISABLE_BACKCOLOR 14823
+	#define LCD_DISABLE_FORECOLOR 33840
+	#define LCD_CURSORCOLOR 63080
+	#define LCD_DEAD_SCREEN_COLOR 63488
+	#define MENU_X 0
+	#define MENU_Y 7
+	#define MENU_W 320
+	#define MENU_H 187
+	#define MENU_MAX_LINE 6
+	#define UM_HOR_SPACING HOR_SPACING
+	#define UM_VER_SPACING VER_SPACING
+	#define MENU_SCRIPT_FILE "menu.txt"
+	#define USE_STG_TIMESTAMP 0
+
+	'------ ui_msg_box ------
+	#define MSG_BOX_X 0
+	#define MSG_BOX_Y 0
+	#define MSG_BOX_W lcd.width
+	#define MSG_BOX_H 185
+	#define MSB_HOR_SPACING 2
+	#define MSB_VER_SPACING 3
+
+	'------ ui_input_box -----
+	#define IB_MAX_LEN 64
+	#define LCD_FIX_FONT "11X19(H).bin"
+	#define INPUT_BOX_X MENU_X
+	#define INPUT_BOX_Y MENU_H+MENU_Y-9
+	#define INPUT_BOX_W MENU_W-MENU_X
+	#define INPUT_BOX_H 25
+	#define INPUT_BOX_CURSOR_OFFSET 2
+	#define INPUT_BOX_CURSOR_WIDTH 2
+	#define INPUT_BOX_INIT_POS 0
+	#define LCD_INPUTBOX_FORECOLOR 65535
+	#define LCD_INPUTBOX_BACKCOLOR 63080
+	#define UIB_HOR_SPACING HOR_SPACING
+	#define RESTART yes
+	
+	'------ ui_list_box ------
+	#define SMALL_ICON_FILE "small_icons.bmp"
+	#define LCD_STD_FONT "11X19(HP).bin"
+	#define SMALL_FONT "Tibbo-5x7(V).bin"
+	#define LIST_BOX_X 25
+	#define LIST_BOX_Y 15
+	#define LIST_BOX_W 270
+	#define LIST_BOX_H 160
+	#define SCROLL_ARROW_X_POS_OFFSET 0
+	#define SCROLL_ARROW_Y_POS_OFFSET 2
+	#define ULB_VER_SPACING VER_SPACING
+	#define ULB_HOR_SPACING HOR_SPACING	
+
+#endif
+
+'====== GPRS ======
+#if SUPPORTS_GPRS
+	#define GPRS_SER_PORT 0
+	#define GPRS_SEND_PING 1
+	#define GPRS_PING_IP "93.174.104.89"
+'	#define GPRS_SER_PORT_RTSMAP 5
+'	#define GPRS_SER_PORT_CTSMAP 4
+'	#define GPRS_RESET PL_IO_NUM_7_TX3_INT7
+'	#define GPRS_POWER PL_IO_NUM_6_RX3_INT6
+#endif
+
+
+'====== TABLE ======
+#if	SUPPORTS_TABLE
+	#define FILENUM_MAX_FILENAME_LEN TBL_MAX_TABLE_NAME_LEN
+	#define UI_TABLE_CONTROL 0
+	#define AGG_TABLE_CONTROL 1
+#endif
+
+'INCLUDES'------------------------------------------------------------------------------
+includepp "settings.xtxt"
+
+#if SUPPORTS_AGG
+	includepp "agg.xtxt"
+#endif
+
+#if	SUPPORTS_TABLE
+	includepp "tables.xtxt"
+#endif
+
+#if SUPPORTS_DISPLAY
+	includepp "menu.txt"
+#endif
+	
+include "settings\trunk\settings.tbh"
+include "time\trunk\time.tbh"
+include "dhcp\trunk\dhcp.tbh"
+include "sock\trunk\sock.tbh"
+include "filenum\trunk\filenum.tbh" 
+include "sntp\trunk\sntp.tbh"
+
+include "login_control.tbh"
+
+#if SUPPORTS_DS
+	include "flags.tbh"
+	include "net_cmd.tbh"
+#endif
+
+#if SUPPORTS_TABLE
+	include "filenum\trunk\filenum.tbh"
+	include "tables\trunk\tables.tbh"
+#endif
+
+#if USE_DNS
+	include "dns\trunk\dns.tbh"
+#endif
+
+#if SUPPORTS_DISPLAY
+	include "ui_input_box.tbh"
+	include "ui_list_box.tbh"
+	include "ui_msg_box.tbh"
+	include "ui_menu.tbh"
+#endif
+
+#if WLN_AVAILABLE
+	include "wln\trunk\wln.tbh"
+#endif
+
+#if SUPPORTS_AGG
+	include "aggregate\trunk\aggregate.tbh"
+#endif
+
+#if SUPPORTS_GPRS
+	include "gprs\trunk\gprs.tbh"
+#endif
+
+#if SUPPORT_HTML
+	include "html_common.tbh"
+	include "html_setting.tbh"
+	include "html_session.tbh"
+#endif
+
+include "boot.tbh"
+include "device.tbh"
+include "AccessControl.tbh"
+
+'DECLARATIONS'------------------------------------------------------------------------------
+declare sock_http(NUM_HTTP_SOCKETS) as byte
+declare sock_dns as byte
+declare param_dh as no_yes
+
+#if WLN_AVAILABLE
+	declare param_ws as pl_wln_security_modes
+	declare param_wd as no_yes
+	declare param_we as en_param_we
+	declare param_wa as string(32)
+#endif
+
+#if SUPPORTS_GPRS
+	declare param_ge as en_param_ge
+	declare param_ga as string(16)
+	declare param_gn as string(32)
+	declare param_gu as string(16)
+	declare param_gp as string(16)
+#endif
+
+declare interface_ready(MAX_NUM_INTERFACES) as no_yes
+declare current_interface as pl_sock_interfaces
+declare ip_configured(MAX_NUM_INTERFACES) as no_yes
+declare wln_password as string(32)
+declare num_wln_failures as byte
+declare gprs_already_started,wln_already_started as no_yes
+declare wln_error,gprs_error as no_yes
+declare reboot_flag as no_yes
+declare server_ip_obtain as no_yes
+declare agg_port_fallback_count as byte
+declare io_index as byte
+declare enter_menu as no_yes

@@ -1,0 +1,511 @@
+include "global.tbh"
+
+dim events_enable(12) as boolean
+
+#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DIRECT or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+	dim event_global_id as dword
+
+	'	Events ACE array
+	dim event_ace(EVENTS_ACE_COUNT) as EVENT_ACE_TYPE
+	dim event_ace_send(EVENTS_ACE_SENDED_COUNT) as EVENT_SENDED
+	dim event_ace_send_count as byte
+	
+	'	Events CR array
+	dim event_cr(EVENTS_CR_COUNT) as EVENT_CR_TYPE
+	dim event_cr_send(EVENTS_CR_SENDED_COUNT) as EVENT_SENDED
+	dim event_cr_send_count as byte
+
+	declare sub event_send_direct_ace(id as long, date_req as string(17), source as EN_EVENT_SOURCE, evnt as EN_EVENT_EVENT, addition as string(12), extra as string(16))
+	declare sub event_send_direct_cr(id as long, date_req as string(17),  card_id as string(16), direction as EN_TA_DIRECTION_TYPE)
+
+#endif
+
+#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_STANDART or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+
+	declare sub event_table_ace(time_req as string(17), source as EN_EVENT_SOURCE, evnt as EN_EVENT_EVENT, addition as string(12), extra as string(16))
+	declare sub event_table_cr(time_req as string(17), card_id as string(16), direction as EN_TA_DIRECTION_TYPE)
+
+#endif
+
+sub event_init()
+	
+	dim i as integer
+	
+	events_enable(EN_ES_READER) = val(stg_get("EE",0))
+	events_enable(EN_ES_INPUT) = val(stg_get("EI",0))
+	events_enable(EN_ES_RELAY) = val(stg_get("ER",0))
+	events_enable(EN_ES_STATE) = val(stg_get("EX",0))
+	events_enable(EN_ES_ACL) = val(stg_get("EA",0))
+	events_enable(EN_ES_AGG) = val(stg_get("EG",0))
+	events_enable(EN_ES_DEVICE) = val(stg_get("EV",0))
+	events_enable(EN_ES_STATE_STOR) = val(stg_get("EW",0))
+	events_enable(EN_ES_DOOR) = val(stg_get("ED",0))
+	events_enable(EN_ES_TURNSTYLE) = val(stg_get("EU",0))
+	events_enable(EN_ES_APB) = val(stg_get("PB",0))
+	events_enable(0) = val(stg_get("ET",0))
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DIRECT or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+		event_global_id = 0
+		
+		'	Events ACE arrays and variables init
+		for i = 0 to EVENTS_ACE_COUNT - 1
+			event_ace(i).status = EN_ET_EMPTY
+		next i
+		for i = 0 to EVENTS_ACE_SENDED_COUNT - 1
+			event_ace_send(i).index = -1
+		next i
+		event_ace_send_count = 0
+
+		'	Events CR arrays and variables init
+		for i = 0 to EVENTS_CR_COUNT - 1
+			event_cr(i).status = EN_ET_EMPTY
+		next i
+		for i = 0 to EVENTS_CR_SENDED_COUNT - 1
+			event_cr_send(i).index = -1
+		next i
+		event_cr_send_count = 0
+	#endif
+	
+end sub
+
+sub event_timer()
+	
+	dim i, j as integer
+	dim index as dword
+	dim i_index as integer
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DIRECT or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+		if agg_stored_event_enable_send = YES then
+			' ACE events
+			' Send event
+			if event_ace_send_count < EVENTS_ACE_SENDED_COUNT then
+				' Seek event for smallest ID
+				index = -1
+				i_index = -1
+				for i = 0 to EVENTS_ACE_COUNT - 1
+					if event_ace(i).status = EN_ET_ACTIVE then
+						if event_ace(i).id < index then
+							index = event_ace(i).id
+							i_index = i
+						end if
+					end if
+				next i
+				
+				if i_index <> -1 then
+					if agg_link_state = EN_AGG_LINK_STATE_ESTABLISHED then
+						if agg_sychronized = YES then
+							' Seek empty index for table of sended events
+							for j = 0 to EVENTS_ACE_SENDED_COUNT - 1
+								if event_ace_send(j).index = -1 then exit for
+							next j
+							
+							if j < EVENTS_ACE_SENDED_COUNT then
+								event_ace_send_count = event_ace_send_count + 1
+								event_ace_send(j).index = i_index
+								event_ace_send(j).timeout = EVENTS_ACE_TIMEOUT
+								event_ace_send(j).id_agg = agg_get_new_id()
+
+								#if DEV_DEBUG_PRINT
+									dev_debugprint("EventTimer. Send ACE event directly")
+								#endif
+								'Send event
+								event_send_direct_ace(event_ace_send(j).id_agg, event_ace(i_index).time, event_ace(i_index).source, event_ace(i_index).evnt, event_ace(i_index).addition, event_ace(i_index).extra)
+								event_ace(i_index).status = EN_ET_SENDED
+							end if
+						end if
+				#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+					else
+						' Move event to table
+						#if DEV_DEBUG_PRINT
+							dev_debugprint("EventTimer. Move ACE event to table")
+						#endif
+						event_table_ace(event_ace(i_index).time, event_ace(i_index).source, event_ace(i_index).evnt, event_ace(i_index).addition, event_ace(i_index).extra)
+						event_ace(i_index).status = EN_ET_EMPTY
+				#endif
+					end if
+				end if
+			end if
+			
+			' Check Time Out for ACE sended events
+			for j = 0 to EVENTS_ACE_SENDED_COUNT - 1
+				if event_ace_send(j).index <> -1 then
+					if event_ace_send(j).timeout = 0 then
+						i_index = event_ace_send(j).index
+						if event_ace(i_index).status = EN_ET_SENDED then
+							if agg_link_state = EN_AGG_LINK_STATE_ESTABLISHED then
+								if agg_sychronized = YES then
+									#if DEV_DEBUG_PRINT
+										dev_debugprint("EventTimer. Send ACE event directly")
+									#endif
+									event_send_direct_ace(event_ace_send(j).id_agg, event_ace(i_index).time, event_ace(i_index).source, event_ace(i_index).evnt, event_ace(i_index).addition, event_ace(i_index).extra)
+									event_ace_send(j).timeout = EVENTS_ACE_TIMEOUT
+								end if
+						#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+							else
+								#if DEV_DEBUG_PRINT
+									dev_debugprint("EventTimer. Move ACE event to table")
+								#endif
+								event_table_ace(event_ace(i_index).time, event_ace(i_index).source, event_ace(i_index).evnt, event_ace(i_index).addition, event_ace(i_index).extra)
+								event_ace(i_index).status = EN_ET_EMPTY
+								event_ace_send(j).index = -1
+						#endif
+							end if
+						end if
+					else
+						event_ace_send(j).timeout = event_ace_send(j).timeout - 1
+					end if
+				end if
+			next j
+
+			' CR events
+			' Send event
+			if event_cr_send_count < EVENTS_CR_SENDED_COUNT then
+				' Seek event for smallest ID
+				index = -1
+				i_index = -1
+				for i = 0 to EVENTS_CR_COUNT - 1
+					if event_cr(i).status = EN_ET_ACTIVE then
+						if event_cr(i).id < index then
+							index = event_cr(i).id
+							i_index = i
+						end if
+					end if
+				next i
+				
+				if i_index <> -1 then
+					if agg_link_state = EN_AGG_LINK_STATE_ESTABLISHED then
+						if agg_sychronized = YES then
+							' Seek empty index for table of sended events
+							for j = 0 to EVENTS_CR_SENDED_COUNT - 1
+								if event_cr_send(j).index = -1 then exit for
+							next j
+							
+							if j < EVENTS_CR_SENDED_COUNT then
+								event_cr_send_count = event_cr_send_count + 1
+								event_cr_send(j).index = i_index
+								event_cr_send(j).timeout = EVENTS_CR_TIMEOUT
+								event_cr_send(j).id_agg = agg_get_new_id()
+
+								'Send event
+								#if DEV_DEBUG_PRINT
+									dev_debugprint("EventTimer. Send CR event directly")
+								#endif
+								event_send_direct_cr(event_cr_send(j).id_agg, event_cr(i_index).time, event_cr(i_index).card, event_cr(i_index).direction)
+								event_cr(i_index).status = EN_ET_SENDED
+							end if
+						end if
+				#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+					else
+						' Move event to table
+						#if DEV_DEBUG_PRINT
+							dev_debugprint("EventTimer. Move CR event to table")
+						#endif
+						event_table_cr(event_cr(i_index).time, event_cr(i_index).card, event_cr(i_index).direction)
+						event_cr(i_index).status = EN_ET_EMPTY
+				#endif
+					end if
+				end if
+			end if
+			
+			' Check Time Out for CR sended events
+			for j = 0 to EVENTS_CR_SENDED_COUNT - 1
+				if event_cr_send(j).index <> -1 then
+					if event_cr_send(j).timeout = 0 then
+						i_index = event_cr_send(j).index
+						if event_cr(j).status = EN_ET_SENDED then
+							if agg_link_state = EN_AGG_LINK_STATE_ESTABLISHED then
+								if agg_sychronized = YES then
+									#if DEV_DEBUG_PRINT
+										dev_debugprint("EventTimer. Send CR event directly")
+									#endif
+									event_send_direct_cr(event_cr_send(j).id_agg, event_cr(i_index).time, event_cr(i_index).card, event_cr(i_index).direction)
+									event_cr_send(j).timeout = EVENTS_CR_TIMEOUT
+								end if
+						#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+							else
+								#if DEV_DEBUG_PRINT
+									dev_debugprint("EventTimer. Move CR event to table")
+								#endif
+								event_table_cr(event_cr(i_index).time, event_cr(i_index).card, event_cr(i_index).direction)
+								event_cr(i_index).status = EN_ET_EMPTY
+								event_cr_send(j).index = -1
+						#endif
+							end if
+						end if
+					else
+						event_cr_send(j).timeout = event_cr_send(j).timeout - 1
+					end if
+				end if
+			next j
+		end if
+	#endif
+
+end sub
+
+sub event_confirm_agg(id as long)
+
+	dim i as word
+	
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DIRECT or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+		' Seek in ACE array
+		if event_ace_send_count > 0 then
+			for i = 0 to EVENTS_ACE_SENDED_COUNT - 1
+				if event_ace_send(i).index <> -1 then
+					if event_ace_send(i).id_agg = id then
+						event_ace(event_ace_send(i).index).status = EN_ET_EMPTY
+						event_ace_send(i).index = -1
+						event_ace_send_count = event_ace_send_count - 1
+						exit for
+					end if
+				end if
+			next i
+		end if
+
+		' Seek in CR array
+		if event_cr_send_count > 0 then
+			for i = 0 to EVENTS_CR_SENDED_COUNT - 1
+				if event_cr_send(i).index <> -1 then
+					if event_cr_send(i).id_agg = id then
+						event_cr(event_cr_send(i).index).status = EN_ET_EMPTY
+						event_cr_send(i).index = -1
+						event_cr_send_count = event_cr_send_count - 1
+						exit for
+					end if
+				end if
+			next i
+		end if
+	#endif
+
+end sub
+
+sub event_apb(cmd as EN_EVENT_APB_CMD, card as string(16), reader as byte, date as string(17))
+
+	dim event_data as string
+	dim time_req as string(23)
+	
+	time_req = date
+	agg_date_time_formating(time_req, EN_TBL_DT_ALL, EN_AGG_GET)
+	event_data = chr(AGG_ELEMENT_START) + "R" + chr(AGG_ELEMENT_NAME_VALUE_SEPARATOR) + chr(AGG_ELEMENT_START) + str(cmd) + chr(AGG_ELEMENT_END)+ chr(AGG_ELEMENT_START) + card + chr(AGG_ELEMENT_END) + chr(AGG_ELEMENT_START) + str(reader) + chr(AGG_ELEMENT_END) + chr(AGG_ELEMENT_START) + time_req + chr(AGG_ELEMENT_END) + chr(AGG_ELEMENT_END) 
+	agg_fire_instant_event("root", "APB", event_data, 6)
+
+end sub
+
+sub event_add(source as EN_EVENT_SOURCE, evnt as EN_EVENT_EVENT, addition as string(12), extra as string(16))
+
+	if events_enable(source) = 0 then exit sub
+
+	dim dcount,mcount as word
+	dim sec as byte
+	dim time_req as string(23)
+	dim event_data as string
+	dim i as word
+
+	' Get time for event
+	rtc.getdata(dcount,mcount,sec)
+	td_to_str(time_req,dcount,mcount,sec,0)	' Events stored in UTC time zone
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+		if agg_link_state = EN_AGG_LINK_STATE_ESTABLISHED then
+	#endif
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DIRECT or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+	
+		' Store event to ACE Array if ACE Array is not full
+		for i = 0 to EVENTS_ACE_COUNT - 1
+			if event_ace(i).status = EN_ET_EMPTY then
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("EventAddACE. Add ACE event to array")
+				#endif
+				event_global_id = event_global_id + 1
+				event_ace(i).status = EN_ET_ACTIVE
+				event_ace(i).id = event_global_id
+				event_ace(i).time = time_req
+				event_ace(i).source = source
+				event_ace(i).evnt = evnt
+				event_ace(i).addition = addition
+				event_ace(i).extra = extra
+				
+				exit for
+			end if
+		next i
+	#endif
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+			if i = EVENTS_ACE_COUNT then
+				' Array is full! Store to table
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("EventAddACE. Add ACE event to table")
+				#endif
+				event_table_ace(time_req, source, evnt, addition, extra)
+			end if
+		else
+	#endif
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_STANDART or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+	'	Standart fire event schema
+		#if DEV_DEBUG_PRINT
+			dev_debugprint("EventAddACE. STD Add ACE event to table")
+		#endif
+		event_table_ace(time_req, source, evnt, addition, extra)
+	#endif
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+		end if
+	#endif
+
+end sub
+
+sub event_time(card_id as string(16), direction as EN_TA_DIRECTION_TYPE)
+	
+	dim dcount, mcount as word
+	dim sec as byte
+	dim time_req as string(23)
+	dim event_data as string
+	dim i as word
+
+	if events_enable(0) = 0 then exit sub
+
+	' Get time for event
+	rtc.getdata(dcount,mcount,sec)
+	td_to_str(time_req,dcount,mcount,sec,0)	' Events stored in UTC time zone
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+		if agg_link_state = EN_AGG_LINK_STATE_ESTABLISHED then
+	#endif
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DIRECT or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+
+		' Store event to CR Array if CR Array is not full
+		for i = 0 to EVENTS_CR_COUNT - 1
+			if event_cr(i).status = EN_ET_EMPTY then
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("EventAddCR. Add CR event to array")
+				#endif
+				event_global_id = event_global_id + 1
+				event_cr(i).status = EN_ET_ACTIVE
+				event_cr(i).id = event_global_id
+				event_cr(i).time = time_req
+				event_cr(i).card = card_id
+				event_cr(i).direction = direction
+				
+				exit for
+			end if
+		next i
+	#endif
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+			if i = EVENTS_CR_COUNT then
+				' Array is full! Store to table
+				#if DEV_DEBUG_PRINT
+					dev_debugprint("EventAddCR. Add CR event to table")
+				#endif
+				event_table_cr(time_req, card_id, direction)
+			end if
+		else
+	#endif
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_STANDART or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+	'	Standart fire event schema
+		#if DEV_DEBUG_PRINT
+			dev_debugprint("EventAddCR. STD Add CR event to table")
+		#endif
+		event_table_cr(time_req, card_id, direction)
+	#endif
+
+	#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+		end if
+	#endif
+
+end sub
+
+#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_STANDART or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+
+sub event_table_ace(time_req as string(17), source as EN_EVENT_SOURCE, evnt as EN_EVENT_EVENT, addition as string(12), extra as string(16))
+
+	tbl_select("ACE","ACE")
+
+	tbl_field_set("DT", time_req)
+	tbl_field_set("AEL", 2)
+	tbl_field_set("DS", "ACE")
+	tbl_field_set("Source", Str(source))
+	tbl_field_set("Event", Str(evnt))
+	tbl_field_set("Addition", addition)
+	tbl_field_set("Extra", extra)
+
+	tbl_record_add("")
+	agg_stored_event_added("ACE")
+	
+end sub
+
+sub event_table_cr(time_req as string(17), card_id as string(16), direction as EN_TA_DIRECTION_TYPE)
+	tbl_select("CR","CR")
+
+	tbl_field_set("type", Str(direction))
+	tbl_field_set("id", card_id)
+	tbl_field_set("date", time_req)
+
+	tbl_record_add("")
+
+	agg_stored_event_added("CR")
+end sub
+
+#endif
+
+#if EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DIRECT or EVENTS_PROCEDURE_TYPE = EVENT_TYPE_DYNAMIC
+
+sub event_send_direct_ace(id as long, date_req as string(17), source as EN_EVENT_SOURCE, evnt as EN_EVENT_EVENT, addition as string(12), extra as string(16))
+
+	dim event_data as string
+	dim date_agg as string(23)
+
+	date_agg = date_req
+	agg_date_time_formating(date_agg, EN_TBL_DT_ALL, EN_AGG_GET)
+
+	event_data = chr(AGG_COMMAND_START) + "M" + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + chr(AGG_COMMAND_PARAMETERS_SEPARATOR)
+		+ "E" + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + "ACE" + chr(AGG_COMMAND_PARAMETERS_SEPARATOR)
+		+ "1" + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + lstri(id) + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) 
+		+ chr(AGG_ELEMENT_START) + "R"+chr(AGG_ELEMENT_NAME_VALUE_SEPARATOR)
+		+ chr(AGG_ELEMENT_START) + date_agg + chr(AGG_ELEMENT_END) 
+		+ chr(AGG_ELEMENT_START) + "ACE" + chr(AGG_ELEMENT_END) 
+		+ chr(AGG_ELEMENT_START) + str(source) + chr(AGG_ELEMENT_END)
+		+ chr(AGG_ELEMENT_START) + str(evnt) + chr(AGG_ELEMENT_END)
+		+ chr(AGG_ELEMENT_START) + addition + chr(AGG_ELEMENT_END)
+		+ chr(AGG_ELEMENT_START) + extra + chr(AGG_ELEMENT_END) + chr(AGG_ELEMENT_END)
+		+ chr(AGG_COMMAND_END)
+		agg_data_send(event_data)
+
+end sub
+
+sub event_send_direct_cr(id as long, date_req as string(17),  card_id as string(16), direction as EN_TA_DIRECTION_TYPE)
+
+	dim event_data as string
+	dim date_agg as string(23)
+
+	date_agg = date_req
+	agg_date_time_formating(date_agg, EN_TBL_DT_ALL, EN_AGG_GET)
+
+	event_data = chr(AGG_COMMAND_START) + "M" + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + chr(AGG_COMMAND_PARAMETERS_SEPARATOR)
+		+ "E" + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + "CR" + chr(AGG_COMMAND_PARAMETERS_SEPARATOR)
+		+ "1" + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + lstri(id) + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) + chr(AGG_COMMAND_PARAMETERS_SEPARATOR) 
+		+ chr(AGG_ELEMENT_START) + "R"+chr(AGG_ELEMENT_NAME_VALUE_SEPARATOR)
+		+ chr(AGG_ELEMENT_START) + str(direction) + chr(AGG_ELEMENT_END)
+		+ chr(AGG_ELEMENT_START) + card_id + chr(AGG_ELEMENT_END)
+		+ chr(AGG_ELEMENT_START) + date_agg + chr(AGG_ELEMENT_END) 
+		+ chr(AGG_ELEMENT_END)
+		+ chr(AGG_COMMAND_END)
+		agg_data_send(event_data)
+
+end sub
+
+#endif
+
+function event_sr_to_ta(direction as EN_SR_DIRECTION_TYPE) as EN_TA_DIRECTION_TYPE
+	
+	select case direction
+	case EN_SR_DT_IN:
+		event_sr_to_ta = EN_TA_DT_IN
+	case EN_SR_DT_OUT:
+		event_sr_to_ta = EN_TA_DT_OUT
+	end select
+
+end function

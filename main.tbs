@@ -1,0 +1,694 @@
+include "global.tbh"
+
+const DNS_SERVER="8.8.4.4"
+const DIVIDERBYHALFSEC = 5
+
+'------------------------------------------------------------------------------
+public dim param_dh as no_yes
+public dim interface_ready(MAX_NUM_INTERFACES) as no_yes
+public dim current_interface as pl_sock_interfaces
+public dim ip_configured(MAX_NUM_INTERFACES) as no_yes
+public dim wln_password as string(32)
+public dim num_wln_failures as byte
+public dim gprs_already_started,wln_already_started as no_yes
+public dim wln_error,gprs_error as no_yes
+public dim sock_http(NUM_HTTP_SOCKETS) as byte
+public dim sock_dns as byte
+public dim reboot_flag as no_yes
+public dim server_ip_obtain as no_yes
+public dim agg_port_fallback_count as byte
+public dim io_index as byte
+public dim enter_menu as no_yes
+
+#if SUPPORTS_GPRS
+	public dim param_ge as en_param_ge
+	public dim param_ga as string(16)
+	public dim param_gn as string(32)
+	public dim param_gu as string(16)
+	public dim param_gp as string(16)
+#endif
+
+#if WLN_AVAILABLE
+	public dim param_ws as pl_wln_security_modes
+	public dim param_we as en_param_we
+	public dim param_wa as string(32)
+	public dim param_wd as no_yes	
+#endif
+
+declare agg_sock as byte
+ 
+dim divider_by_1sec as no_yes
+dim divider_by_halfsec as byte
+dim div_10sec as byte
+dim net_linkstate as byte
+dim running_light as byte
+dim agg_port as word
+
+'==============================================================================
+function nibble(b as byte) as string
+
+	dim nb as byte
+	
+	nb = b AND 15
+select case nb
+	case 0:
+		nibble = "0"
+	case 1:
+		nibble = "1"
+	case 2:
+		nibble = "2"
+	case 3:
+		nibble = "3"
+	case 4:
+		nibble = "4"
+	case 5:
+		nibble = "5"
+	case 6:
+		nibble = "6"
+	case 7:
+		nibble = "7"
+	case 8:
+		nibble = "8"
+	case 9:
+		nibble = "9"
+	case 10:
+		nibble = "A"
+	case 11:
+		nibble = "B"
+	case 12:
+		nibble = "C"
+	case 13:
+		nibble = "D"
+	case 14:
+		nibble = "E"
+	case 15:
+		nibble = "F"
+case else:
+		nibble = "-"
+end select
+
+end function
+
+function hex_str(b as byte) as string
+	
+	dim v as byte
+	v = b / 16
+	hex_str = nibble(v)
+	hex_str = hex_str + nibble(b)
+	
+end function
+
+sub on_sys_init()
+
+	divider_by_1sec = NO
+	divider_by_halfsec = DIVIDERBYHALFSEC
+	div_10sec = 10
+
+	boot()
+	net_linkstate=1
+
+#if SUPPORTS_DISPLAY
+	display_lcd_text(ACWARE_VERSION, 270, 0, 110, 10)
+#endif
+
+'----------------------------------------------------
+'|	AccessControl									|
+'----------------------------------------------------
+
+	flag_update = false
+	flag_need_init = false
+	event_add(EN_ES_DEVICE, EN_EE_POWERON, "", "")
+
+	tz = val(stg_get("TZ",0))
+	ds = val(stg_get("DS",0))
+
+	event_init()
+
+	flag_emergency_agg = EN_AS_OFF
+	flag_block_agg = EN_AS_OFF
+#if SUPPORTS_DISPLAY
+	ta_init()
+#endif
+	ac_init()
+	serial_init()
+	pin_init()
+	relay_init()
+	function_init()
+	
+#if SUPPORTS_DISPLAY
+	display_init()
+#endif
+'----------------------------------------------------
+'|	end AccessControl								|
+'----------------------------------------------------
+
+'------------------
+#if SUPPORTS_DISPLAY	
+	io_index=0
+	enter_menu=NO
+	while true
+		doevents
+		if enter_menu=YES and (serial_mc = true or serial_mc_id = "") then
+			exit while
+		end if
+	wend
+	
+	lcd.forecolor=LCD_FORECOLOR
+	lcd.backcolor=LCD_BACKCOLOR
+	lcd_clear(0,0,lcd.width,lcd.height)
+	logout()
+	login(CMD_MODE_TERMINAL,"",0)
+	pat.play(PAT_BLINK_BOTH_IN_TURNS,PL_PAT_CANINT)
+	ui_menu(MENU_X,MENU_Y,MENU_W, MENU_H,"",MENU_SCRIPT_FILE,3,LCD_MENU_TOUT)
+	sys.reboot
+#endif	
+
+end sub
+
+'------------------------------------------------------------------------------
+sub on_sys_timer()
+	dim x as byte
+	dim sock_state as pl_sock_state_simple
+	dim s1,s2,s3,s4,s5 as string(32)
+	dim w1 as word
+	
+'----------------------------------------------------
+'|	AccessControl									|
+'----------------------------------------------------
+	relay_control_timer()
+	pin_read_state()
+	serial_check_tbl_update
+	serial_timer()
+	event_timer()
+
+#if AGG_TABLE_CONTROL
+	agg_event_timeout()
+#endif
+
+	if flag_update = true then
+		if flag_need_init = true then
+			ac_init()
+			#if DEV_DEBUG_PRINT
+				dev_debugprint("end sync AGG")
+			#endif
+
+			flag_update = false
+			flag_need_init = false
+			#if SUPPORTS_DISPLAY
+				display_lcd_access("     ", 150, 0, 80, 20, 0)
+			#endif
+		end if
+	end if
+'----------------------------------------------------
+'|	end AccessControl								|
+'----------------------------------------------------
+	
+	if divider_by_halfsec > 0 then
+		divider_by_halfsec = divider_by_halfsec - 1
+		exit sub
+	end if
+	
+	divider_by_halfsec = DIVIDERBYHALFSEC
+
+	#if SUPPORTS_AGG
+		dim link_state as en_agg_link_states
+	#endif
+	
+	if reboot_timer>0 then
+		reboot_timer=reboot_timer-1
+		if reboot_timer=0 then
+			sys.reboot
+		end if
+	end if
+
+	dhcp_proc_timer()
+	
+	#if SUPPORTS_AGG
+		agg_proc_timer()
+		agg_keep_alive()
+	#endif
+
+	#if WLN_AVAILABLE
+		wln_proc_timer()
+		device_update_rssi()
+		wln_check_for_better_ap(WLN_RSSI_1)
+	#endif
+	
+	#if SUPPORTS_GPRS
+		gprs_proc_timer()
+	#endif	
+
+	#if USE_DNS
+		dns_proc_timer()
+	#endif
+	
+	'the following must be called once every second
+	if divider_by_1sec = YES then
+		divider_by_1sec = NO
+		exit sub
+	end if
+	
+	'we reach this point once/second
+	divider_by_1sec = YES
+
+	'--- HOOK UP THINGS THAT MUST BE CALLED EVERY SECOND ---
+	
+	'take care of login timeout
+	login_timer_proc()
+	
+	#if SIGNAL_STRENGTH_INDICATION
+		'wireless signal strength indication
+		#if SUPPORTS_GPRS
+			if current_interface=PL_SOCK_INTERFACE_PPP or wln_already_started=NO then
+				if gprs_already_started=YES then
+					if gprs_error<>NO then
+						if running_light=0 then
+							signal_strength_set(&b10101)
+							running_light=1
+						else
+							signal_strength_set(0)
+							running_light=0
+						end if	
+					else
+						if interface_ready(PL_SOCK_INTERFACE_PPP)=NO then
+							signal_strength_set(val("&b"+strgen(4-running_light,"1")+"0"+strgen(running_light,"1")))
+							running_light=running_light+1
+'							if running_light>4 then
+'								running_light=0
+'							end if
+'						else
+							signal_strength_set("&b10101")
+						end if
+					end if
+				else
+					signal_strength_set(0)
+				end if
+				goto exit_ss_indication	
+			end if
+		#endif
+
+		#if WLN_AVAILABLE
+			if wln_already_started=YES then	
+				if wln_error<>NO then
+						if running_light=0 then
+							signal_strength_set(&b11111)
+							running_light=1
+						else
+							signal_strength_set(0)
+							running_light=0
+						end if	
+				else
+					if interface_ready(PL_SOCK_INTERFACE_WLN)=NO then
+						signal_strength_set(val("&b1"+strgen(running_light,"0")))
+						running_light=running_light+1
+						if running_light>4 then
+							running_light=0
+						end if
+					else
+						x=(wln.rssi/40)+1
+						if x>5 then x=5
+						signal_strength_set("&b"+strgen(x,"1"))
+					end if
+				end if
+			else
+				signal_strength_set(0)
+			end if
+			goto exit_ss_indication
+		#endif
+	#endif
+	
+exit_ss_indication:	
+	#if SUPPORTS_AGG
+		if login_mode=CMD_MODE_NONE and param_ar=1 then
+			if interface_ready(current_interface)=YES then
+				if (current_interface=PL_SOCK_INTERFACE_PPP or ip_configured(current_interface)=YES) then
+					#if USE_DNS
+						if server_ip_obtain=NO then
+							dns_connect(current_interface,DNS_SERVER,0)
+							goto skip_aggregate						
+						end if
+					#endif
+					
+					s1=stg_get("CT",0)
+					w1=val(s1)
+					w1=w1*120
+					s1=stg_get("ON",0)
+					s2=stg_get("DN",0)
+					s3=stg_get("PW",0)
+					s4=stg_get("TI",0)
+					s5=stg_get("TP",0)
+					if agg_port_fallback_count>0 then
+						agg_port=val(s5)
+					end if
+					
+					'remote modify agg connection parameters
+					if test_connection_retry>0 then
+						if conn_p_modified=YES then
+							s1=owner_name_temp
+							s2=device_name_temp
+							s4=server_ip_temp
+						end if				
+					end if
+						
+					agg_start(current_interface, s1, s2, s3, s4, agg_port, w1, YES) '  PL_SOCK_INTERFACE_PPP
+skip_aggregate:				
+				end if
+			end if
+		end if
+	#endif
+	
+	#if USE_SNTP
+		'sntp
+		if param_te=1 then
+			rtc.getdata(w1,0,0)
+			if last_sntp_date<>w1 then
+				if ip_obtained(PL_SOCK_INTERFACE_NET) then
+					sntp_start(PL_SOCK_INTERFACE_NET,stg_get("TS",0),0,s_sock)
+				else if ip_obtained(PL_SOCK_INTERFACE_WLN) then
+					sntp_start(PL_SOCK_INTERFACE_WLN,stg_get("TS",0),0,s_sock)
+				end if
+				sntp_proc_timer()
+			end if
+		end if
+	#endif
+	
+	#if SUPPORTS_DISPLAY
+		print_time()
+		print_wifi()
+	#endif
+	
+	#if NET_AVAILABLE
+		if net.failure=YES then
+			led_pat_to_play=PAT_TWO_SHORT_RED
+			goto play_pat						
+		end if
+	#endif
+	
+	#if WLN_AVAILABLE
+		if wln_error=YES then
+			led_pat_to_play=PAT_TWO_SHORT_RED
+			goto play_pat			
+		end if
+	#endif
+	
+	#if SUPPORTS_GPRS
+		if gprs_error=YES then
+			led_pat_to_play=PAT_TWO_SHORT_RED
+			goto play_pat			
+		end if		
+	#endif
+	
+	#if SUPPORTS_DS
+		if error_mode=YES then
+			led_pat_to_play=PAT_BLINK_RED_SLOW
+			goto play_pat
+		end if
+	#endif
+	
+	#if NET_AVAILABLE
+		if current_interface=PL_SOCK_INTERFACE_NET and ip_configured(current_interface)=NO then
+			led_pat_to_play=PAT_ONE_SHORT_GREEN
+			goto play_pat
+		end if	
+	#endif
+	
+	#if WLN_AVAILABLE
+		if current_interface=PL_SOCK_INTERFACE_WLN and ip_configured(current_interface)=NO then
+			led_pat_to_play=PAT_ONE_SHORT_GREEN
+			goto play_pat
+		end if	
+	#endif
+	
+	if login_mode=CMD_MODE_HTTP then
+		led_pat_to_play=PAT_BLINK_BOTH_IN_TURNS
+	end if
+	
+	#if SUPPORTS_AGG
+		if login_mode=CMD_MODE_AGGREGATE then
+			'AggreGate comms status
+			agg_get_connection_state(link_state,sock_state)
+			select case link_state
+			case EN_AGG_LINK_STATE_IDLE:
+				led_pat_to_play=PAT_TWO_SHORT_GREEN
+			
+			case EN_AGG_LINK_STATE_CONNECTING:
+				led_pat_to_play=PAT_THREE_SHORT_GREEN
+			
+			case EN_AGG_LINK_STATE_SYNCRONIZING:
+				led_pat_to_play=PAT_BLINK_GREEN
+			
+			case EN_AGG_LINK_STATE_ESTABLISHED:
+				led_pat_to_play=PAT_GREEN_ON
+				
+			case else:
+				led_pat_to_play=PAT_THREE_SHORT_RED
+			end select
+		end if
+	
+		'remote modify agg connection parameters
+		if agg_test_connection_timer>0 then
+			agg_test_connection_timer=agg_test_connection_timer-1
+			if agg_test_connection_timer=0 then
+				agg_stop()
+			end if
+		end if	
+	#endif
+play_pat:
+	if led_pat_to_play<>led_pat_to_play_prev then
+		led_pat_to_play_prev=led_pat_to_play
+		pat.play(PAT_GAP,PL_PAT_CANINT)
+	end if
+
+end sub
+
+#if WLN_AVAILABLE
+'------------------------------------------------------------------------------
+sub on_wln_event(wln_event as pl_wln_events)
+	wln_proc_event(wln_event)
+end sub
+
+'------------------------------------------------------------------------------
+sub on_wln_task_complete(completed_task as pl_wln_tasks)
+	wln_proc_task_complete(completed_task)
+end sub
+
+#endif
+'------------------------------------------------------------------------------
+sub on_sock_data_arrival()
+
+	#if WLN_AVAILABLE
+		wln_proc_data()
+	#endif
+
+	#if SUPPORTS_GPRS
+		gprs_proc_sock_data()
+	#endif
+	
+	#if USE_DNS
+		dns_proc_data()
+	#endif
+	
+	#if SUPPORTS_DISPLAY
+		if sock.num=agg_sock then
+			agg_cmd_received=YES
+		end if
+	#endif
+	
+	dhcp_proc_data()
+	
+	#if SUPPORTS_AGG
+		agg_proc_data()
+	#endif
+	
+	#if SUPPORTS_DS
+		net_cmd_proc(CMD_MODE_UDP,error_mode)
+	#endif
+	
+	#if USE_SNTP
+		if param_te=1 then
+			sntp_proc_data()
+		end if
+	#endif
+
+end sub
+
+'------------------------------------------------------------------------------
+sub on_sock_data_sent()
+	'agg_proc_data_sent()
+end sub
+
+'------------------------------------------------------------------------------
+sub on_sock_event(newstate as pl_sock_state, newstatesimple as pl_sock_state_simple)
+	
+	#if SUPPORTS_AGG
+		agg_proc_sock_event(newstate,newstatesimple)
+		
+		if sock.num=agg_sock then
+			if sock.statesimple=PL_SSTS_EST then
+				if agg_port_fallback_count=0 then
+					stg_set("TP",0,"6480")
+				else
+					agg_port_fallback_count=AGG_PORT_FALLBACK_MAX
+				end if
+			end if
+			
+			select case sock.state
+			case PL_SST_CL_ARESET_RE_PO:
+				goto a1
+			case PL_SST_CL_ARESET_RE_AO:
+				goto a1
+			case PL_SST_CL_ARESET_RE_EST:
+				goto a1
+			case PL_SST_CL_ARESET_RE_PC:
+				goto a1
+			case PL_SST_CL_ARESET_RE_AC:
+				goto a1
+			case PL_SST_CL_ARESET_TOUT:
+				goto a1
+			case PL_SST_CL_ARESET_DERR:
+				goto a1			
+a1:		
+			#if SUPPORTS_DISPLAY and NET_AVAILABLE
+				print_lan_network_state(NETWORK_REPRINT_PREVIOUS_STATE)
+			#endif
+
+			#if WLN_AVAILABLE
+				#if SUPPORTS_DISPLAY			
+					print_wln_network_state(NETWORK_REPRINT_PREVIOUS_STATE)
+				#endif
+				wln_rescanning=YES
+				wln_start_rescan()
+			#endif			
+				if agg_port_fallback_count>0 then
+					agg_port_fallback_count=agg_port_fallback_count-1
+					if agg_port_fallback_count=0 then
+						agg_port=6480
+					end if
+				end if
+			end select
+		end if
+	
+	#endif
+	
+	#if SUPPORT_HTML
+		if sock.num = index_page_socknum and newstate = PL_SST_CL_ACLOSED then
+			if html_reboot_flag = YES then 
+				sys.reboot
+			else
+				index_page_socknum = 255
+			end if
+		end if
+	#endif
+	
+	#if USE_SNTP
+		if sock.num=s_sock and param_te=1 then
+			sntp_proc_sock_event(newstatesimple)
+		end if	
+	#endif
+	
+	#if USE_DNS	
+		dim s as string(32)
+		if sock.num=sock_dns and newstatesimple=PL_SSTS_EST then
+			if conn_p_modified=NO or domain_name_temp="" then
+				s=stg_get("TN",0)
+			else
+				s=domain_name_temp
+			end if
+
+			if s<>"" then
+				dns_query(s)
+			else
+				server_ip_obtain=YES
+				dns_disconnect()
+			end if
+		end if
+	#endif
+
+end sub
+
+'------------------------------------------------------------------------------
+#if NET_AVAILABLE
+#if SIMULATE_ETHER_OFF_BY_BUTTON=0
+sub on_net_link_change()
+#else
+sub on_button_pressed()
+#endif
+	
+	#if SIMULATE_ETHER_OFF_BY_BUTTON=0
+		net_linkstate=net.linkstate
+	#else
+		if net_linkstate=1 then
+			net_linkstate=0
+		else
+			net_linkstate=1
+		end if
+	#endif
+	ethernet_link_state_change(net_linkstate)
+end sub
+#endif
+
+'------------------------------------------------------------------------------
+#if SIMULATE_ETHER_OFF_BY_BUTTON=0
+sub on_button_pressed()
+	dim i,j as word
+	
+	beep.play("B*",PL_BEEP_CANINT)
+	'is this a setting init attempt? We need to wait for a while -- the button must be "long-pressed"
+	i=sys.timercount
+	while button.pressed=YES
+		j=sys.timercount
+		'the code below takes into the account that the sys.timercount can wrap around
+		if j>=i then
+			if j-i>=BUTTON_CONST_QUICK_INIT then
+				goto initialize
+			end if
+		else
+			if  (65536-i)+j>=BUTTON_CONST_QUICK_INIT then
+initialize:		'OK, initialize now!
+				
+				device_setting_init(EN_STG_INIT_MODE_OVERRIDE)
+				sys.reboot()
+			end if
+		end if
+		doevents 
+	wend
+	enter_menu=YES
+
+end sub
+#endif
+
+'------------------------------------------------------------------------------
+sub on_ser_data_arrival()
+
+'----------------------------------------------------
+'|	AccessControl									|
+'----------------------------------------------------
+	agg_stored_event_enable_send = NO
+	serial_data_operate()
+	agg_stored_event_enable_send = YES
+'----------------------------------------------------
+'|	AccessControl									|
+'----------------------------------------------------
+
+	#if SUPPORTS_GPRS
+		if ser.num = GPRS_SER_PORT then
+			gprs_proc_ser_data()
+			exit sub
+		end if
+	#endif
+end sub
+
+'------------------------------------------------------------------------------
+sub on_pat()
+	if pat.channel=0 then
+		pat.play(led_pat_to_play,PL_PAT_CANINT)
+	end if
+end sub
+
+sub on_button_released()
+	' TODO: place "on_button_released" event handler code here...
+end sub
+
+sub on_ser_data_sent()
+	' TODO: place "on_ser_data_sent" event handler code here...
+end sub

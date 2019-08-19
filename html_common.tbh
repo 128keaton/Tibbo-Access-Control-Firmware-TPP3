@@ -1,0 +1,12 @@
+
+declare html_reboot_flag as no_yes
+declare index_page_socknum as byte
+declare page_code as byte
+
+'------------------------------------------------------------------------------
+declare sub sock_setsend(byref s as string)
+declare sub html_spec_chr_convert(byref http_req_string as string)
+declare function get_http_argument(byref http_req_string as string, byref argument as string) as string
+declare function mod_http_argument(byref http_req_string as string, byref argument as string, byref arg_val as string) as string
+declare sub html_httpcmd_print_msg()
+declare sub html_choose_return_page()

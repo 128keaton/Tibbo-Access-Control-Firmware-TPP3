@@ -1,0 +1,6 @@
+>>AR	Server connection						B,L,0-Disabled;1-Enabled;	^
+>>ON	Owner name (User account)				S,I,32	^
+>>DN	Device name (Device account) 			S,I,32	^
+>>TP	Server port	S,I,5	^
+>>TI	Server IP				S,I,15	^
+>>CT	Connection timeout (minutes, 0 to disable)	S,I,3	^

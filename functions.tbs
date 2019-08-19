@@ -1,0 +1,166 @@
+include "global.tbh"
+
+dim flag_emergency_agg as EN_AGG_STATE
+dim flag_block_agg as EN_AGG_STATE
+
+function function_emergency_set() as EN_FUNC_STATUS
+
+	if ta_mode = true then exit function
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Function EmergencySet fired!")
+	#endif
+
+	if flag_emergency_agg = EN_AS_OFF then
+		flag_emergency_agg = EN_AS_ON
+'		Stor.setdata("1", 1000)							' Write Emergency State
+		event_add(EN_ES_AGG, EN_EE_FUNCTION, "EmergencySet", "Successful")
+
+		relay_emergency_start(pin_get_emergency_relays())
+		function_emergency_set = EN_FS_SUCCESSFUL
+	else
+		event_add(EN_ES_AGG, EN_EE_FUNCTION, "EmergencySet", "Fail")
+		function_emergency_set = EN_FS_FAIL
+	end if
+
+end function
+
+function function_emergency_reset() as EN_FUNC_STATUS
+
+	if ta_mode = true then exit function
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Function EmergencyReset fired!")
+	#endif
+
+	if flag_emergency_agg = EN_AS_ON then
+		flag_emergency_agg = EN_AS_OFF
+'		Stor.setdata("0", 1000)							' Write Emergency State
+		event_add(EN_ES_AGG, EN_EE_FUNCTION, "EmergencyReset", "Successful")
+
+		relay_emergency_end(pin_get_emergency_relays())
+		function_emergency_reset = EN_FS_SUCCESSFUL
+	else
+		event_add(EN_ES_AGG, EN_EE_FUNCTION, "EmergencyReset", "Fail")
+		function_emergency_reset = EN_FS_FAIL
+	end if
+	
+end function
+
+function function_block_set() as EN_FUNC_STATUS
+	
+	if ta_mode = true then exit function
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Function BlockSet fired!")
+	#endif
+
+	if flag_block_agg = EN_AS_OFF then
+		flag_block_agg = EN_AS_ON
+'		Stor.setdata("1", 1001)							' Write Block State
+		event_add(EN_ES_AGG, EN_EE_FUNCTION, "BlockSet", "Successful")
+
+		relay_block_start(pin_get_block_relays())
+		function_block_set = EN_FS_SUCCESSFUL
+	else
+		event_add(EN_ES_AGG, EN_EE_FUNCTION, "BlockSet", "Fail")
+		function_block_set = EN_FS_FAIL
+	end if
+	
+end function
+
+function function_block_reset() as EN_FUNC_STATUS
+	
+	if ta_mode = true then exit function
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Function BlockReset fired!")
+	#endif
+
+	if flag_block_agg = EN_AS_ON then
+		flag_block_agg = EN_AS_OFF
+'		Stor.setdata("0", 1001)							' Write Block State
+		event_add(EN_ES_AGG, EN_EE_FUNCTION, "BlockReset", "Successful")
+
+		relay_block_end(pin_get_block_relays())
+		function_block_reset = EN_FS_SUCCESSFUL
+	else
+		event_add(EN_ES_AGG, EN_EE_FUNCTION, "BlockReset", "Fail")
+		function_block_reset = EN_FS_FAIL
+	end if
+	
+end function
+
+function function_channel_open(channel as byte) as EN_FUNC_STATUS
+	
+	if ta_mode = true then exit function
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Function ChannelOpen fired!")
+	#endif
+
+	event_add(EN_ES_AGG, EN_EE_FUNCTION, "ChannelOpen", Str(channel))
+	function_channel_open = relay_open_channel_agg(channel)
+	
+end function
+
+function function_channel_open_long(channel as byte) as EN_FUNC_STATUS
+	
+	if ta_mode = true then exit function
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Function ChannelOpenLong fired!")
+	#endif
+
+	event_add(EN_ES_AGG, EN_EE_FUNCTION, "ChannelOpenLong", Str(channel))
+	function_channel_open_long  = relay_open_channel_long(channel)
+	
+end function
+
+function function_channel_close_long(channel as byte) as EN_FUNC_STATUS
+	
+	if ta_mode = true then exit function
+
+	#if DEV_DEBUG_PRINT
+		dev_debugprint("Function ChannelCloseLong fired!")
+	#endif
+
+	event_add(EN_ES_AGG, EN_EE_FUNCTION, "ChannelClose", Str(channel))
+	function_channel_close_long = relay_close_channel_long(channel)
+	
+end function
+
+sub function_init()
+	dim param as byte
+
+'	'Check Emergency state
+'	param = Val(Stor.getdata(1000, 1))		' Address 1000 - Emergency State
+'	if param >= 0 and param <= 1 then
+'		if param = 0 then
+'			flag_emergency_agg = EN_AS_OFF
+'		else
+'			flag_emergency_agg = EN_AS_ON
+'			event_add(EN_ES_STATE_STOR, EN_EE_RESTORED_STATE, "Emergency", "")
+'
+'			relay_emergency_start(pin_get_emergency_relays())
+'		end if
+'	else
+'		Stor.setdata("0", 1000)
+'	end if
+
+	'Check Block state
+'	param = Val(Stor.getdata(1001, 1))		' Address 1001 - Block State
+'	if param >= 0 and param <= 1 then
+'		if param = 0 then
+'			flag_block_agg = EN_AS_OFF
+'		else
+'			flag_block_agg = EN_AS_ON
+'			event_add(EN_ES_STATE_STOR, EN_EE_RESTORED_STATE, "Block", "")
+'
+'			relay_block_start(pin_get_block_relays())
+'		end if
+'	else
+'		Stor.setdata("0", 1001)
+'	end if
+
+end sub
