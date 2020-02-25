@@ -6,8 +6,8 @@ cursor=15374
 opened=yes
 breakpoints=
 [file2]
-line=84
-cursor=813
+line=0
+cursor=187
 opened=yes
 breakpoints=
 [file3]
@@ -36,9 +36,9 @@ cursor=539
 opened=no
 breakpoints=
 [file8]
-line=676
-cursor=20044
-opened=no
+line=905
+cursor=26166
+opened=yes
 breakpoints=
 [file9]
 line=0
@@ -325,7 +325,7 @@ opened=yes
 [file72]
 opened=no
 [file73]
-opened=yes
+opened=active
 [file74]
 line=114
 cursor=4147
@@ -403,8 +403,8 @@ opened=yes
 breakpoints=
 [file89]
 line=60
-cursor=1606
-opened=active
+cursor=2266
+opened=yes
 breakpoints=
 [file90]
 line=0
@@ -426,9 +426,9 @@ cursor=8430
 opened=no
 breakpoints=
 [file95]
-line=808
-cursor=42205
-opened=no
+line=1007
+cursor=35878
+opened=yes
 breakpoints=
 [file96]
 line=126
