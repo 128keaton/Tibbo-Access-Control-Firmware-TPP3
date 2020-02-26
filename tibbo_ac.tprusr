@@ -325,7 +325,7 @@ opened=yes
 [file72]
 opened=no
 [file73]
-opened=active
+opened=no
 [file74]
 line=114
 cursor=4147
@@ -427,8 +427,8 @@ opened=no
 breakpoints=
 [file95]
 line=1007
-cursor=35878
-opened=yes
+cursor=35834
+opened=active
 breakpoints=
 [file96]
 line=126
